@@ -1,14 +1,14 @@
-# CPI-Food Deployment - GitHub Actions
+# Deploy CLI - GitHub Actions Workflow
 #
-# This workflow deploys services to production server.
-# Trigger: Manual dispatch or push to main branch
+# This workflow deploys services using the deploy.sh CLI tool.
+# Configure your services in config/services.env before use.
 #
 # Required Secrets:
-#   - DOCKERHUB_USERNAME: DockerHub username
-#   - DOCKERHUB_PASSWORD: DockerHub access token
-#   - SSH_PRIVATE_KEY: SSH private key for deployment
-#   - REMOTE_HOST: Production server IP/hostname
-#   - REMOTE_USER: SSH user for deployment
+#   DOCKERHUB_USERNAME  - DockerHub username
+#   DOCKERHUB_PASSWORD  - DockerHub access token
+#   SSH_PRIVATE_KEY     - SSH private key for deployment server
+#   REMOTE_HOST         - Deployment server IP/hostname
+#   REMOTE_USER         - SSH user for deployment
 
 name: Deploy Service
 
@@ -16,14 +16,10 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: 'Service to deploy'
+        description: 'Service to deploy (from services.env) or "all"'
         required: true
-        type: choice
-        options:
-          - admin-dashboard
-          - keystore
-          - landingpage
-          - all
+        type: string
+        default: 'all'
       environment:
         description: 'Target environment'
         required: true
@@ -33,18 +29,18 @@ on:
           - staging
           - production
       dry_run:
-        description: 'Dry run (preview only)'
+        description: 'Dry run (preview only, no changes)'
         required: false
         default: false
         type: boolean
 
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'Dockerfile'
+  # Uncomment to enable auto-deploy on push
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'src/**'
+  #     - 'Dockerfile'
 
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -52,7 +48,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy ${{ github.event.inputs.service || 'auto' }}
+    name: Deploy ${{ github.event.inputs.service || 'service' }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
     
@@ -67,7 +63,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -78,17 +74,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Determine service to deploy
-        id: service
+      - name: List available services
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "service=${{ github.event.inputs.service }}" >> $GITHUB_OUTPUT
-            echo "dry_run=${{ github.event.inputs.dry_run }}" >> $GITHUB_OUTPUT
-          else
-            # Auto-detect based on changed files (customize as needed)
-            echo "service=admin-dashboard" >> $GITHUB_OUTPUT
-            echo "dry_run=false" >> $GITHUB_OUTPUT
-          fi
+          chmod +x ./deploy.sh
+          echo "Available services:"
+          ./deploy.sh --list || true
 
       - name: Run deployment
         run: |
@@ -100,7 +90,7 @@ jobs:
           
           ARGS="--yes"
           
-          if [ "${{ steps.service.outputs.dry_run }}" == "true" ]; then
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
           
@@ -108,25 +98,24 @@ jobs:
             ARGS="$ARGS --env staging"
           fi
           
-          SERVICE="${{ steps.service.outputs.service }}"
-          if [ "$SERVICE" == "all" ]; then
+          SERVICE="${{ github.event.inputs.service }}"
+          if [ "$SERVICE" == "all" ] || [ -z "$SERVICE" ]; then
             ARGS="$ARGS --all"
           else
             ARGS="$ARGS $SERVICE"
           fi
           
+          echo "Running: ./deploy.sh $ARGS"
           ./deploy.sh $ARGS
 
-      - name: Notify on success
-        if: success()
+      - name: Deployment Summary
+        if: always()
         run: |
-          echo "✅ Deployment successful!"
-          echo "Service: ${{ steps.service.outputs.service }}"
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed. Check logs above."
+          fi
+          echo "Service: ${{ github.event.inputs.service || 'all' }}"
           echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
           echo "Commit: ${{ github.sha }}"
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "❌ Deployment failed!"
-          echo "Check the logs above for details."

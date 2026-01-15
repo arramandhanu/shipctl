@@ -1,13 +1,14 @@
-# CPI-Food Deployment - Bitbucket Pipelines
+# Deploy CLI - Bitbucket Pipelines
 #
-# This pipeline deploys services to production server.
+# This pipeline deploys services using the deploy.sh CLI tool.
+# Configure your services in config/services.env before use.
 #
-# Required Repository Variables (Repository Settings > Pipelines > Repository Variables):
-#   - DOCKERHUB_USERNAME: DockerHub username
-#   - DOCKERHUB_PASSWORD: DockerHub access token (secured)
-#   - SSH_PRIVATE_KEY: SSH private key for deployment (secured)
-#   - REMOTE_HOST: Production server IP/hostname
-#   - REMOTE_USER: SSH user for deployment
+# Required Repository Variables (Settings > Pipelines > Repository Variables):
+#   DOCKERHUB_USERNAME  - DockerHub username
+#   DOCKERHUB_PASSWORD  - DockerHub access token (secured)
+#   SSH_PRIVATE_KEY     - SSH private key (secured)
+#   REMOTE_HOST         - Deployment server IP/hostname
+#   REMOTE_USER         - SSH user for deployment
 
 image: docker:24-dind
 
@@ -17,95 +18,96 @@ definitions:
       memory: 2048
 
   steps:
+    #--------------------------------------------------------------------------
+    # Reusable deploy step
+    #--------------------------------------------------------------------------
     - step: &deploy-step
         name: Deploy Service
         services:
           - docker
+        caches:
+          - docker
         script:
           # Install dependencies
-          - apk add --no-cache openssh-client bash git
+          - apk add --no-cache openssh-client bash git curl
           
           # Setup SSH
           - mkdir -p ~/.ssh
           - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           - chmod 600 ~/.ssh/deploy_key
-          - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
+          - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
           
           # Docker login
           - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           
-          # Run deployment
+          # Make deploy script executable
           - chmod +x ./deploy.sh
+          
+          # Export SSH key path
           - export SSH_KEY=~/.ssh/deploy_key
-          - ./deploy.sh ${SERVICE} --yes --env ${ENVIRONMENT}
+          
+          # Run deployment
+          - |
+            if [ -n "$SERVICE" ]; then
+              ./deploy.sh ${SERVICE} --yes --env ${ENVIRONMENT:-production}
+            else
+              ./deploy.sh --all --yes --env ${ENVIRONMENT:-production}
+            fi
+
+    #--------------------------------------------------------------------------
+    # Validate step
+    #--------------------------------------------------------------------------
+    - step: &validate-step
+        name: Validate Configuration
+        script:
+          - apk add --no-cache bash
+          - chmod +x ./deploy.sh
+          - ./deploy.sh --list || echo "Configure services.env first"
 
 pipelines:
-  # Manual deployments via custom pipelines
+  #----------------------------------------------------------------------------
+  # Custom Pipelines (Manual Trigger from Bitbucket UI)
+  #----------------------------------------------------------------------------
   custom:
-    deploy-admin-dashboard-production:
+    # Deploy a specific service
+    deploy-service:
+      - variables:
+          - name: SERVICE
+            default: ""
+          - name: ENVIRONMENT
+            default: "production"
+            allowed-values:
+              - staging
+              - production
       - step:
           <<: *deploy-step
-          name: Deploy Admin Dashboard to Production
-          deployment: production
+          name: Deploy ${SERVICE:-all services}
+          deployment: ${ENVIRONMENT}
+
+    # Deploy all services
+    deploy-all:
+      - variables:
+          - name: ENVIRONMENT
+            default: "production"
+            allowed-values:
+              - staging
+              - production
+      - step:
+          <<: *deploy-step
+          name: Deploy All Services
+          deployment: ${ENVIRONMENT}
           script:
-            - apk add --no-cache openssh-client bash git
+            - apk add --no-cache openssh-client bash git curl
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
             - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
+            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
             - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
             - chmod +x ./deploy.sh
             - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh admin-dashboard --yes --env production
+            - ./deploy.sh --all --yes --env ${ENVIRONMENT}
 
-    deploy-keystore-production:
-      - step:
-          <<: *deploy-step
-          name: Deploy Keystore to Production
-          deployment: production
-          script:
-            - apk add --no-cache openssh-client bash git
-            - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-            - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
-            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./deploy.sh
-            - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh keystore --yes --env production
-
-    deploy-landingpage-production:
-      - step:
-          <<: *deploy-step
-          name: Deploy Landing Page to Production
-          deployment: production
-          script:
-            - apk add --no-cache openssh-client bash git
-            - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-            - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
-            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./deploy.sh
-            - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh landingpage --yes --env production
-
-    deploy-all-production:
-      - step:
-          <<: *deploy-step
-          name: Deploy All Services to Production
-          deployment: production
-          script:
-            - apk add --no-cache openssh-client bash git
-            - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-            - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
-            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./deploy.sh
-            - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh --all --yes --env production
-
+    # Dry run for testing
     dry-run:
       - step:
           name: Dry Run Test
@@ -114,31 +116,44 @@ pipelines:
           script:
             - apk add --no-cache bash git
             - chmod +x ./deploy.sh
-            - ./deploy.sh admin-dashboard --dry-run
+            - ./deploy.sh --all --dry-run
 
-  # Auto-deploy on branch pushes
+  #----------------------------------------------------------------------------
+  # Branch Pipelines
+  #----------------------------------------------------------------------------
   branches:
+    # Main branch - validation only (deploy via custom pipeline)
     main:
       - step:
-          name: Build Check
-          script:
-            - apk add --no-cache bash git
-            - chmod +x ./deploy.sh
-            - ./deploy.sh --list
-            - echo "Ready for deployment. Use custom pipeline to deploy."
+          <<: *validate-step
+          name: Validate (deploy via Run Pipeline)
 
+    master:
+      - step:
+          <<: *validate-step
+          name: Validate (deploy via Run Pipeline)
+
+    # Develop branch - auto deploy to staging
     develop:
       - step:
           <<: *deploy-step
           name: Deploy to Staging
           deployment: staging
           script:
-            - apk add --no-cache openssh-client bash git
+            - apk add --no-cache openssh-client bash git curl
             - mkdir -p ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
             - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
+            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
             - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
             - chmod +x ./deploy.sh
             - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh admin-dashboard --yes --env staging
+            - ./deploy.sh --all --yes --env staging
+
+  #----------------------------------------------------------------------------
+  # Pull Request Pipelines
+  #----------------------------------------------------------------------------
+  pull-requests:
+    '**':
+      - step:
+          <<: *validate-step

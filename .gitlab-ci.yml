@@ -1,114 +1,131 @@
-# CPI-Food Deployment - GitLab CI/CD
+# Deploy CLI - GitLab CI/CD Pipeline
 #
-# This pipeline deploys services to production server.
+# This pipeline deploys services using the deploy.sh CLI tool.
+# Configure your services in config/services.env before use.
 #
-# Required Variables (Settings > CI/CD > Variables):
-#   - DOCKERHUB_USERNAME: DockerHub username
-#   - DOCKERHUB_PASSWORD: DockerHub access token (masked)
-#   - SSH_PRIVATE_KEY: SSH private key for deployment (file type)
-#   - REMOTE_HOST: Production server IP/hostname
-#   - REMOTE_USER: SSH user for deployment
+# Required CI/CD Variables (Settings > CI/CD > Variables):
+#   DOCKERHUB_USERNAME  - DockerHub username
+#   DOCKERHUB_PASSWORD  - DockerHub access token (masked)
+#   SSH_PRIVATE_KEY     - SSH private key (file type recommended)
+#   REMOTE_HOST         - Deployment server IP/hostname
+#   REMOTE_USER         - SSH user for deployment
 
 stages:
-  - build
+  - validate
   - deploy
 
 variables:
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
 
-# Template for deployment jobs
+#------------------------------------------------------------------------------
+# Validate Configuration
+#------------------------------------------------------------------------------
+validate:
+  stage: validate
+  image: alpine:latest
+  script:
+    - apk add --no-cache bash
+    - chmod +x ./deploy.sh
+    - |
+      if [ -f config/services.env ]; then
+        echo "✓ services.env found"
+        ./deploy.sh --list || echo "⚠ Could not list services"
+      else
+        echo "⚠ config/services.env not found"
+        echo "  Copy config/services.env.template to config/services.env"
+      fi
+  only:
+    - merge_requests
+    - branches
+
+#------------------------------------------------------------------------------
+# Deploy Template (reusable)
+#------------------------------------------------------------------------------
 .deploy_template: &deploy_template
+  stage: deploy
   image: docker:24-dind
   services:
     - docker:24-dind
   before_script:
+    # Install dependencies
+    - apk add --no-cache openssh-client bash git curl
+    
     # Setup SSH
-    - apk add --no-cache openssh-client bash git
     - mkdir -p ~/.ssh
     - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
     - chmod 600 ~/.ssh/deploy_key
-    - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
+    - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
     
     # Docker login
     - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-  script:
+    
+    # Make deploy script executable
     - chmod +x ./deploy.sh
+
+#------------------------------------------------------------------------------
+# Production Deployments (Manual Trigger)
+#------------------------------------------------------------------------------
+
+# Deploy single service - use pipeline variables
+deploy:service:
+  <<: *deploy_template
+  script:
     - export SSH_KEY=~/.ssh/deploy_key
-    - ./deploy.sh ${SERVICE} --yes --env ${ENVIRONMENT}
-
-# Production deployments (manual)
-deploy:admin-dashboard:production:
-  <<: *deploy_template
-  stage: deploy
-  variables:
-    SERVICE: admin-dashboard
-    ENVIRONMENT: production
-  when: manual
-  environment:
-    name: production
-    url: https://admin.example.com
-  only:
-    - main
-
-deploy:keystore:production:
-  <<: *deploy_template
-  stage: deploy
-  variables:
-    SERVICE: keystore
-    ENVIRONMENT: production
+    - |
+      if [ -z "$SERVICE_NAME" ]; then
+        echo "ERROR: SERVICE_NAME variable not set"
+        echo "Run pipeline with SERVICE_NAME variable (e.g., frontend, backend)"
+        ./deploy.sh --list
+        exit 1
+      fi
+    - ./deploy.sh ${SERVICE_NAME} --yes --env ${DEPLOY_ENV:-production}
   when: manual
   environment:
     name: production
   only:
     - main
-
-deploy:landingpage:production:
-  <<: *deploy_template
-  stage: deploy
-  variables:
-    SERVICE: landingpage
-    ENVIRONMENT: production
-  when: manual
-  environment:
-    name: production
-    url: https://example.com
-  only:
-    - main
+    - master
 
 # Deploy all services
-deploy:all:production:
+deploy:all:
   <<: *deploy_template
-  stage: deploy
-  variables:
-    SERVICE: "--all"
-    ENVIRONMENT: production
+  script:
+    - export SSH_KEY=~/.ssh/deploy_key
+    - ./deploy.sh --all --yes --env ${DEPLOY_ENV:-production}
   when: manual
   environment:
     name: production
   only:
     - main
+    - master
 
-# Staging deployments (auto on develop branch)
-deploy:admin-dashboard:staging:
+#------------------------------------------------------------------------------
+# Staging Deployments (Auto on develop branch)
+#------------------------------------------------------------------------------
+deploy:staging:
   <<: *deploy_template
-  stage: deploy
-  variables:
-    SERVICE: admin-dashboard
-    ENVIRONMENT: staging
+  script:
+    - export SSH_KEY=~/.ssh/deploy_key
+    - |
+      if [ -n "$SERVICE_NAME" ]; then
+        ./deploy.sh ${SERVICE_NAME} --yes --env staging
+      else
+        ./deploy.sh --all --yes --env staging
+      fi
   environment:
     name: staging
-    url: https://staging-admin.example.com
   only:
     - develop
 
-# Dry-run job (for testing)
+#------------------------------------------------------------------------------
+# Dry Run (for testing)
+#------------------------------------------------------------------------------
 dry-run:
   <<: *deploy_template
-  stage: build
   script:
-    - chmod +x ./deploy.sh
-    - ./deploy.sh admin-dashboard --dry-run
+    - ./deploy.sh --all --dry-run
   when: manual
   only:
     - merge_requests
+    - branches
