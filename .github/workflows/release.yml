@@ -122,7 +122,7 @@ jobs:
 
             def install
               prefix.install Dir["*"]
-              bin.install_symlink prefix/"deploy.sh" => "deploy"
+              bin.install_symlink prefix/"shipctl" => "deploy"
               
               # Install completions
               bash_completion.install "completions/deploy.bash" => "deploy"

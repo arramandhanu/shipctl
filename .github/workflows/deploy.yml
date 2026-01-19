@@ -76,13 +76,13 @@ jobs:
 
       - name: List available services
         run: |
-          chmod +x ./deploy.sh
+          chmod +x ./shipctl
           echo "Available services:"
-          ./deploy.sh --list || true
+          ./shipctl --list || true
 
       - name: Run deployment
         run: |
-          chmod +x ./deploy.sh
+          chmod +x ./shipctl
           
           export SSH_KEY=~/.ssh/deploy_key
           export REMOTE_HOST=${{ secrets.REMOTE_HOST }}
@@ -106,7 +106,7 @@ jobs:
           fi
           
           echo "Running: shipctl $ARGS"
-          ./deploy.sh $ARGS
+          ./shipctl $ARGS
 
       - name: Deployment Summary
         if: always()

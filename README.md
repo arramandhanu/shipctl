@@ -63,8 +63,8 @@ curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/install.s
 ```bash
 git clone https://github.com/arramandhanu/shipctl.git
 cd shipctl
-chmod +x deploy.sh
-ln -s $(pwd)/deploy.sh /usr/local/bin/shipctl
+chmod +x shipctl
+ln -s $(pwd)/shipctl /usr/local/bin/shipctl
 ```
 
 ---
@@ -191,7 +191,7 @@ shipctl frontend --rollback
 
 ```
 shipctl/
-├── deploy.sh                    # Main CLI (symlink as 'shipctl')
+├── shipctl                    # Main CLI (symlink as 'shipctl')
 ├── install.sh                   # Quick install script
 ├── lib/                         # Library modules
 │   ├── colors.sh               # Terminal colors & logging

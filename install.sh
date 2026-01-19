@@ -76,7 +76,7 @@ rm -rf "$SHIPCTL_HOME"
 mv "$TEMP_DIR/$EXTRACT_DIR" "$SHIPCTL_HOME"
 
 # Create symlink
-ln -sf "$SHIPCTL_HOME/deploy.sh" "$INSTALL_DIR/shipctl"
+ln -sf "$SHIPCTL_HOME/shipctl" "$INSTALL_DIR/shipctl"
 chmod +x "$INSTALL_DIR/shipctl"
 
 # Install completions

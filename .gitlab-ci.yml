@@ -26,11 +26,11 @@ validate:
   image: alpine:latest
   script:
     - apk add --no-cache bash
-    - chmod +x ./deploy.sh
+    - chmod +x ./shipctl
     - |
       if [ -f deploy.env ] || [ -f config/services.env ]; then
         echo "✓ Configuration found"
-        ./deploy.sh --list || echo "⚠ Could not list services"
+        ./shipctl --list || echo "⚠ Could not list services"
       else
         echo "⚠ No configuration found"
         echo "  Run: shipctl init"
@@ -61,7 +61,7 @@ validate:
     - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
     
     # Make deploy script executable
-    - chmod +x ./deploy.sh
+    - chmod +x ./shipctl
 
 #------------------------------------------------------------------------------
 # Production Deployments (Manual Trigger)
@@ -76,10 +76,10 @@ deploy:service:
       if [ -z "$SERVICE_NAME" ]; then
         echo "ERROR: SERVICE_NAME variable not set"
         echo "Run pipeline with SERVICE_NAME variable (e.g., frontend, backend)"
-        ./deploy.sh --list
+        ./shipctl --list
         exit 1
       fi
-    - ./deploy.sh ${SERVICE_NAME} --yes --env ${DEPLOY_ENV:-production}
+    - ./shipctl ${SERVICE_NAME} --yes --env ${DEPLOY_ENV:-production}
   when: manual
   environment:
     name: production
@@ -92,7 +92,7 @@ deploy:all:
   <<: *deploy_template
   script:
     - export SSH_KEY=~/.ssh/deploy_key
-    - ./deploy.sh --all --yes --env ${DEPLOY_ENV:-production}
+    - ./shipctl --all --yes --env ${DEPLOY_ENV:-production}
   when: manual
   environment:
     name: production
@@ -109,9 +109,9 @@ deploy:staging:
     - export SSH_KEY=~/.ssh/deploy_key
     - |
       if [ -n "$SERVICE_NAME" ]; then
-        ./deploy.sh ${SERVICE_NAME} --yes --env staging
+        ./shipctl ${SERVICE_NAME} --yes --env staging
       else
-        ./deploy.sh --all --yes --env staging
+        ./shipctl --all --yes --env staging
       fi
   environment:
     name: staging
@@ -124,7 +124,7 @@ deploy:staging:
 dry-run:
   <<: *deploy_template
   script:
-    - ./deploy.sh --all --dry-run
+    - ./shipctl --all --dry-run
   when: manual
   only:
     - merge_requests
