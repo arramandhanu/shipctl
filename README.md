@@ -38,6 +38,7 @@
 | 🌍 **Multi-Environment** | Support for staging, production, or custom environments |
 | 🏥 **Health Checks** | HTTP and TCP verification after deployment |
 | 📂 **Git Repository Support** | Clone and build from Git URLs (SSH or HTTPS) |
+| ⌨️ **Tab Autocompletion** | Shell completion for commands, options, and services |
 | 🎨 **Beautiful Output** | Colored terminal UI with status icons |
 
 ---
@@ -105,7 +106,19 @@ chmod +x deploy.sh
 ./deploy.sh frontend --dry-run
 ```
 
-### 5. Deploy!
+### 5. Enable Tab Completion (Optional)
+
+```bash
+# Add to your shell profile (~/.bashrc or ~/.zshrc)
+source /path/to/deploy-cli/completions/deploy.bash
+
+# Or for current session only
+source ./completions/deploy.bash
+```
+
+Now you can use `Tab` to autocomplete services and options.
+
+### 6. Deploy!
 
 ```bash
 ./deploy.sh frontend
@@ -204,6 +217,8 @@ deploy-cli/
 │   ├── docker.sh               # Docker operations
 │   ├── ssh.sh                  # SSH deployment logic
 │   └── git.sh                  # Git repository operations
+├── completions/
+│   └── deploy.bash             # Shell autocompletion (Bash/Zsh)
 ├── config/
 │   ├── services.env            # Your project config (git-ignored)
 │   └── services.env.template   # Configuration template
