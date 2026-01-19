@@ -43,14 +43,32 @@
 
 ---
 
-## � Quick Start
+## 📦 Installation
 
-### 1. Clone & Enter
+### Homebrew (Recommended)
+
+```bash
+brew tap arramandhanu/tap
+brew install deploy-cli
+```
+
+### Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arramandhanu/deploy-cli/main/install.sh | bash
+```
+
+### Manual
 
 ```bash
 git clone https://github.com/arramandhanu/deploy-cli.git
 cd deploy-cli
+chmod +x deploy.sh
 ```
+
+---
+
+## 🚀 Quick Start
 
 ### 2. Configure Your Project
 
@@ -210,6 +228,7 @@ The tool supports two deployment modes:
 ```
 deploy-cli/
 ├── deploy.sh                    # Main CLI script
+├── install.sh                   # Quick install script
 ├── lib/                         # Library modules
 │   ├── colors.sh               # Terminal colors & logging
 │   ├── utils.sh                # Utility functions
@@ -219,14 +238,19 @@ deploy-cli/
 │   └── git.sh                  # Git repository operations
 ├── completions/
 │   └── deploy.bash             # Shell autocompletion (Bash/Zsh)
+├── Formula/
+│   └── deploy-cli.rb           # Homebrew formula
 ├── config/
 │   ├── services.env            # Your project config (git-ignored)
 │   └── services.env.template   # Configuration template
 ├── .env                         # Credentials (git-ignored)
 ├── .env.template                # Credentials template
-├── .github/workflows/deploy.yml # GitHub Actions
+├── .github/workflows/
+│   ├── deploy.yml              # CI/CD deployment workflow
+│   └── release.yml             # Automated release workflow
 ├── .gitlab-ci.yml               # GitLab CI/CD
-└── bitbucket-pipelines.yml      # Bitbucket Pipelines
+├── bitbucket-pipelines.yml      # Bitbucket Pipelines
+└── CHANGELOG.md                 # Version history
 ```
 
 ### Service Configuration
