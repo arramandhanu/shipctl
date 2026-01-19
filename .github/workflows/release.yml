@@ -90,7 +90,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get version and SHA
         id: info
@@ -138,10 +137,16 @@ jobs:
           end
           EOF
 
-      - name: Commit and push
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add Formula/shipctl.rb
-          git diff --staged --quiet || git commit -m "chore: update formula to v${{ steps.info.outputs.VERSION }}"
-          git push
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update formula to v${{ steps.info.outputs.VERSION }}"
+          title: "chore: update Homebrew formula to v${{ steps.info.outputs.VERSION }}"
+          body: |
+            Automated formula update for release v${{ steps.info.outputs.VERSION }}
+            
+            - Updated URL to new release
+            - Updated SHA256 checksum
+          branch: chore/update-formula-${{ steps.info.outputs.VERSION }}
+          base: main
