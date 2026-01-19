@@ -1,6 +1,6 @@
-# Contributing to Deploy CLI
+# Contributing to shipctl
 
-Thank you for considering contributing to Deploy CLI! This document provides guidelines and best practices for contributing.
+Thank you for considering contributing to shipctl! This document provides guidelines and best practices for contributing.
 
 ---
 
@@ -27,13 +27,13 @@ Please be respectful and constructive in all interactions. We're building someth
 1. **Fork the repository**
    ```bash
    # Click "Fork" on GitHub, then clone your fork
-   git clone https://github.com/YOUR_USERNAME/deploy-cli.git
-   cd deploy-cli
+   git clone https://github.com/YOUR_USERNAME/shipctl.git
+   cd shipctl
    ```
 
 2. **Add upstream remote**
    ```bash
-   git remote add upstream https://github.com/arramandhanu/deploy-cli.git
+   git remote add upstream https://github.com/arramandhanu/shipctl.git
    ```
 
 3. **Create a branch**
@@ -43,9 +43,9 @@ Please be respectful and constructive in all interactions. We're building someth
 
 4. **Set up for testing**
    ```bash
-   cp config/services.env.template config/services.env
-   chmod +x deploy.sh
-   ./deploy.sh --help
+   chmod +x shipctl
+   ./shipctl --help
+   ./shipctl init  # Create test config
    ```
 
 ---
@@ -149,14 +149,14 @@ BREAKING CHANGE: users must update their services.env files"
 
 2. **Test your changes**
    ```bash
-   ./deploy.sh --help
-   ./deploy.sh --list
-   ./deploy.sh frontend --dry-run  # with a test config
+   ./shipctl --help
+   ./shipctl --list
+   ./shipctl frontend --dry-run  # with a test config
    ```
 
 3. **Check for shellcheck warnings** (optional but recommended)
    ```bash
-   shellcheck deploy.sh lib/*.sh
+   shellcheck shipctl lib/*.sh
    ```
 
 ### PR Guidelines

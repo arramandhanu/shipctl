@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #==============================================================================
 #
-#   ██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗
-#   ██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗ ██╔╝
-#   ██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚████╔╝
-#   ██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║  ╚██╔╝
-#   ██████╔╝███████╗██║     ███████╗╚██████╔╝   ██║
-#   ╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝
+#   ███████╗██╗  ██╗██╗██████╗  ██████╗████████╗██╗
+#   ██╔════╝██║  ██║██║██╔══██╗██╔════╝╚══██╔══╝██║
+#   ███████╗███████║██║██████╔╝██║        ██║   ██║
+#   ╚════██║██╔══██║██║██╔═══╝ ██║        ██║   ██║
+#   ███████║██║  ██║██║██║     ╚██████╗   ██║   ███████╗
+#   ╚══════╝╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝   ╚═╝   ╚══════╝
 #
-#   Deploy CLI - Professional Docker Deployment Tool
-#   https://github.com/arramandhanu/deploy-cli
+#   shipctl - Professional Docker Deployment Tool
+#   https://github.com/arramandhanu/shipctl
 #
-#   Usage: ./deploy.sh [OPTIONS] [SERVICE...]
+#   Usage: shipctl [OPTIONS] [SERVICE...]
 #
 #
 #==============================================================================
@@ -47,6 +47,10 @@ CUSTOM_TAG=""
 ENVIRONMENT="production"
 ROLLBACK=false
 LOCAL_MODE=false
+CUSTOM_CONFIG=""
+
+# Config directories
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/shipctl"
 
 #------------------------------------------------------------------------------
 # Show usage/help
@@ -54,12 +58,12 @@ LOCAL_MODE=false
 show_help() {
     # Load config to get PROJECT_NAME and services list
     local config_file="${DEPLOY_ROOT}/config/services.env"
-    local project_name="Deploy CLI"
+    local project_name="shipctl"
     local services_list=""
     
     if [[ -f "$config_file" ]]; then
         source "$config_file"
-        project_name="${PROJECT_NAME:-Deploy CLI}"
+        local project_name="${PROJECT_NAME:-shipctl}"
         services_list="${SERVICES:-}"
     fi
     
@@ -101,6 +105,7 @@ show_help() {
     echo -e "    ${GREEN}-a${RESET}, ${GREEN}--all${RESET}           Deploy all services"
     echo -e "    ${GREEN}-e${RESET}, ${GREEN}--env${RESET} ${GRAY}ENV${RESET}       Environment (staging|production) ${GRAY}[default: production]${RESET}"
     echo -e "    ${GREEN}-t${RESET}, ${GREEN}--tag${RESET} ${GRAY}TAG${RESET}       Use custom image tag instead of git commit SHA"
+    echo -e "    ${GREEN}-c${RESET}, ${GREEN}--config${RESET} ${GRAY}FILE${RESET}  Use custom config file"
     echo -e "    ${GREEN}-n${RESET}, ${GREEN}--dry-run${RESET}       Preview what would be executed (no changes)"
     echo -e "    ${GREEN}-y${RESET}, ${GREEN}--yes${RESET}           Skip confirmation prompts"
     echo -e "    ${GRAY}--skip-checks${RESET}       Skip pre-flight checks (not recommended)"
@@ -110,7 +115,13 @@ show_help() {
     echo -e "    ${GRAY}--no-logs${RESET}           Don't show container logs after deploy"
     echo -e "    ${GREEN}--local${RESET}             Run locally on server (no SSH, for server-side deployment)"
     echo ""
+    echo -e "${BOLD}${YELLOW}COMMANDS${RESET}"
+    echo -e "    ${GREEN}init${RESET}                Create config template in current directory"
+    echo ""
     echo -e "${BOLD}${YELLOW}EXAMPLES${RESET}"
+    echo -e "    ${GRAY}# Initialize config in current project${RESET}"
+    echo -e "    ${WHITE}deploy init${RESET}"
+    echo ""
     echo -e "    ${GRAY}# Deploy a single service${RESET}"
     echo -e "    ${WHITE}./deploy.sh my-service${RESET}"
     echo ""
@@ -119,6 +130,9 @@ show_help() {
     echo ""
     echo -e "    ${GRAY}# Deploy all services${RESET}"
     echo -e "    ${WHITE}./deploy.sh --all${RESET}"
+    echo ""
+    echo -e "    ${GRAY}# Use custom config file${RESET}"
+    echo -e "    ${WHITE}./deploy.sh --config /path/to/config.env frontend${RESET}"
     echo ""
     echo -e "    ${GRAY}# Preview deployment (dry-run)${RESET}"
     echo -e "    ${WHITE}./deploy.sh my-service --dry-run${RESET}"
@@ -132,9 +146,11 @@ show_help() {
     echo -e "    ${GRAY}# Deploy locally on server (no SSH needed)${RESET}"
     echo -e "    ${WHITE}./deploy.sh my-service --local${RESET}"
     echo ""
-    echo -e "${BOLD}${YELLOW}DEPLOYMENT MODES${RESET}"
-    echo -e "    ${CYAN}Remote (default)${RESET}    Run from laptop, deploy via SSH to server"
-    echo -e "    ${CYAN}Local (--local)${RESET}     Run directly on server, no SSH required"
+    echo -e "${BOLD}${YELLOW}CONFIG LOCATIONS${RESET} (in order of priority)"
+    echo -e "    1. ${CYAN}--config FILE${RESET}           Custom path"
+    echo -e "    2. ${CYAN}./deploy.env${RESET}            Per-project config"
+    echo -e "    3. ${CYAN}~/.config/shipctl/${RESET}   Global user config"
+    echo -e "    4. ${CYAN}DEPLOY_ROOT/config/${RESET}     Installation default"
     echo ""
     echo -e "${BOLD}${YELLOW}ENVIRONMENT${RESET}"
     echo -e "    ${CYAN}DOCKERHUB_USERNAME${RESET}  DockerHub username ${RED}(required)${RESET}"
@@ -148,7 +164,7 @@ show_help() {
 # Show version
 #------------------------------------------------------------------------------
 show_version() {
-    echo "Deploy CLI version ${VERSION}"
+    echo "shipctl version ${VERSION}"
 }
 
 #------------------------------------------------------------------------------
@@ -193,32 +209,90 @@ list_available_services() {
 }
 
 #------------------------------------------------------------------------------
+# Resolve configuration file path
+# Priority: 1. --config flag  2. ./deploy.env  3. ~/.config/shipctl/  4. DEPLOY_ROOT/config/
+#------------------------------------------------------------------------------
+resolve_config_path() {
+    local config_file=""
+    
+    # 1. Custom config via --config flag or DEPLOY_CONFIG env
+    if [[ -n "$CUSTOM_CONFIG" ]]; then
+        if [[ -f "$CUSTOM_CONFIG" ]]; then
+            echo "$CUSTOM_CONFIG"
+            return 0
+        else
+            log_error "Config file not found: $CUSTOM_CONFIG"
+            return 1
+        fi
+    fi
+    
+    # 2. Per-project config in current directory
+    if [[ -f "./deploy.env" ]]; then
+        echo "./deploy.env"
+        return 0
+    fi
+    
+    # 3. Global user config
+    if [[ -f "${CONFIG_DIR}/services.env" ]]; then
+        echo "${CONFIG_DIR}/services.env"
+        return 0
+    fi
+    
+    # 4. Default: DEPLOY_ROOT/config (for development/manual installs)
+    if [[ -f "${DEPLOY_ROOT}/config/services.env" ]]; then
+        echo "${DEPLOY_ROOT}/config/services.env"
+        return 0
+    fi
+    
+    # No config found
+    return 1
+}
+
+#------------------------------------------------------------------------------
 # Load configuration
 #------------------------------------------------------------------------------
 load_config() {
-    local config_file="${DEPLOY_ROOT}/config/services.env"
-    local env_file="${DEPLOY_ROOT}/.env"
+    local config_file
+    config_file=$(resolve_config_path)
     
-    # Load main .env if exists
-    if [[ -f "$env_file" ]]; then
-        log_info "Loading environment from .env"
+    if [[ $? -ne 0 ]] || [[ -z "$config_file" ]]; then
+        log_error "No configuration file found"
+        echo ""
+        echo "Create a config file in one of these locations:"
+        echo "  1. ./deploy.env                    (per-project)"
+        echo "  2. ${CONFIG_DIR}/services.env      (global)"
+        echo "  3. ${DEPLOY_ROOT}/config/services.env"
+        echo ""
+        echo "Or run: deploy init"
+        exit 1
+    fi
+    
+    local config_dir
+    config_dir=$(dirname "$config_file")
+    
+    # Load main .env if exists (check multiple locations)
+    local env_file=""
+    if [[ -f "${config_dir}/.env" ]]; then
+        env_file="${config_dir}/.env"
+    elif [[ -f "./.env" ]]; then
+        env_file="./.env"
+    elif [[ -f "${DEPLOY_ROOT}/.env" ]]; then
+        env_file="${DEPLOY_ROOT}/.env"
+    fi
+    
+    if [[ -n "$env_file" ]]; then
+        log_info "Loading credentials from $(basename "$env_file")"
         load_env_file "$env_file"
     fi
     
     # Load environment-specific .env if exists
-    local env_specific_file="${DEPLOY_ROOT}/.env.${ENVIRONMENT}"
+    local env_specific_file="${config_dir}/.env.${ENVIRONMENT}"
     if [[ -f "$env_specific_file" ]]; then
-        log_info "Loading environment from .env.${ENVIRONMENT}"
+        log_info "Loading environment: ${ENVIRONMENT}"
         load_env_file "$env_specific_file"
     fi
     
-    # Load services config
-    if [[ ! -f "$config_file" ]]; then
-        log_error "Configuration file not found: $config_file"
-        log_info "Please copy config/services.env.template to config/services.env and configure it."
-        exit 1
-    fi
-    
+    log_info "Using config: $config_file"
     source "$config_file"
 }
 
@@ -534,6 +608,60 @@ rollback_service() {
 }
 
 #------------------------------------------------------------------------------
+# Initialize configuration
+#------------------------------------------------------------------------------
+cmd_init() {
+    local target_dir="."
+    local target_file="deploy.env"
+    local global_mode=false
+    
+    echo ""
+    echo -e "${BOLD}shipctl - Configuration Setup${RESET}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Check if config already exists
+    if [[ -f "./${target_file}" ]]; then
+        log_warn "Config already exists: ./${target_file}"
+        if ! confirm "Overwrite existing config?"; then
+            log_info "Cancelled"
+            return 0
+        fi
+    fi
+    
+    # Create config from template
+    local template="${DEPLOY_ROOT}/config/services.env.template"
+    
+    if [[ ! -f "$template" ]]; then
+        log_error "Template not found: $template"
+        return 1
+    fi
+    
+    # Copy template
+    cp "$template" "./${target_file}"
+    
+    log_success "Created: ./${target_file}"
+    echo ""
+    echo -e "${BOLD}Next steps:${RESET}"
+    echo ""
+    echo "  1. Edit the configuration:"
+    echo -e "     ${CYAN}nano ./${target_file}${RESET}"
+    echo ""
+    echo "  2. Create credentials file:"
+    echo -e "     ${CYAN}cp ${DEPLOY_ROOT}/.env.template ./.env${RESET}"
+    echo -e "     ${CYAN}nano ./.env${RESET}"
+    echo ""
+    echo "  3. Run a deployment:"
+    echo -e "     ${CYAN}deploy frontend --dry-run${RESET}"
+    echo ""
+    
+    # Optionally create global config
+    echo -e "${GRAY}Tip: For global config, run:${RESET}"
+    echo -e "     ${CYAN}mkdir -p ${CONFIG_DIR} && cp ./${target_file} ${CONFIG_DIR}/services.env${RESET}"
+    echo ""
+}
+
+#------------------------------------------------------------------------------
 # Main
 #------------------------------------------------------------------------------
 main() {
@@ -568,6 +696,10 @@ main() {
                 CUSTOM_TAG="$2"
                 shift 2
                 ;;
+            -c|--config)
+                CUSTOM_CONFIG="$2"
+                shift 2
+                ;;
             -n|--dry-run)
                 DRY_RUN=true
                 shift
@@ -599,6 +731,10 @@ main() {
             --local)
                 LOCAL_MODE=true
                 shift
+                ;;
+            init)
+                cmd_init
+                exit 0
                 ;;
             -*)
                 log_error "Unknown option: $1"

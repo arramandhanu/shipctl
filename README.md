@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg?style=for-the-badge" alt="License">
 </p>
 
-<h1 align="center">🚀 Deploy CLI</h1>
+<h1 align="center">🚀 shipctl</h1>
 
 <p align="center">
   <strong>Professional Docker Deployment Automation Tool</strong>
@@ -17,10 +17,10 @@
 
 <p align="center">
   <a href="#-features">Features</a> •
+  <a href="#-installation">Installation</a> •
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-configuration">Configuration</a> •
   <a href="#-usage">Usage</a> •
-  <a href="#-cicd-integration">CI/CD</a>
+  <a href="#-configuration">Configuration</a>
 </p>
 
 ---
@@ -29,9 +29,9 @@
 
 | Feature | Description |
 |:--------|:------------|
-| 🎯 **Unified CLI** | Single `./deploy.sh` command for all deployment operations |
+| 🎯 **Unified CLI** | Single `shipctl` command for all deployment operations |
 | 📦 **Multi-Service** | Deploy one, multiple, or all services at once |
-| 🔧 **Configurable** | Define your own project name, services, and servers |
+| 🔧 **Flexible Config** | Per-project, global, or custom config paths |
 | 🔍 **Pre-flight Checks** | Validates Docker, SSH, Git before any deployment |
 | 👀 **Dry-Run Mode** | Preview changes without executing anything |
 | ⏪ **Rollback** | Instantly revert to the previous deployed version |
@@ -43,85 +43,86 @@
 
 ---
 
-## � Quick Start
+## 📦 Installation
 
-### 1. Clone & Enter
+### Homebrew (Recommended)
 
 ```bash
-git clone https://github.com/arramandhanu/deploy-cli.git
-cd deploy-cli
+brew tap arramandhanu/tap
+brew install shipctl
 ```
 
-### 2. Configure Your Project
+### Quick Install
 
 ```bash
-# Copy the template
-cp config/services.env.template config/services.env
-
-# Edit with your project details
-nano config/services.env
+curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/install.sh | bash
 ```
 
-**Key settings to configure:**
+### Manual
 
 ```bash
-# Your project name (shown in CLI)
+git clone https://github.com/arramandhanu/shipctl.git
+cd shipctl
+chmod +x shipctl
+ln -s $(pwd)/shipctl /usr/local/bin/shipctl
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Initialize Config
+
+```bash
+cd /path/to/your/project
+shipctl init
+```
+
+This creates `deploy.env` in your project directory.
+
+### 2. Configure Services
+
+```bash
+nano deploy.env
+```
+
+Key settings:
+```bash
 PROJECT_NAME="My Project"
-
-# Your deployment server
 REMOTE_HOST="your-server-ip"
 REMOTE_USER="deploy"
-REMOTE_COMPOSE_DIR="/opt/myproject/compose"
-SSH_KEY="${HOME}/.ssh/id_rsa"
-
-# Your services (comma-separated)
 SERVICES="frontend,backend,api"
 
-# Service configuration (for each service)
 FRONTEND_IMAGE="yourname/myproject-frontend"
 FRONTEND_SERVICE_NAME="frontend"
 FRONTEND_DIRECTORY="../frontend"
-# ... more settings per service
 ```
 
-### 3. Configure Credentials
+### 3. Set Credentials
 
 ```bash
-# Copy and fill in DockerHub credentials
-cp .env.template .env
-nano .env
-```
-
-```bash
+# Create .env in your project
+cat > .env << EOF
 DOCKERHUB_USERNAME=your_username
 DOCKERHUB_PASSWORD=your_access_token
+EOF
 ```
 
-### 4. Make Executable & Test
+### 4. Enable Tab Completion (Optional)
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh --help
-./deploy.sh --list
-./deploy.sh frontend --dry-run
+# Add to ~/.bashrc or ~/.zshrc
+source /path/to/shipctl/completions/shipctl.bash
 ```
 
-### 5. Enable Tab Completion (Optional)
+### 5. Deploy!
 
 ```bash
-# Add to your shell profile (~/.bashrc or ~/.zshrc)
-source /path/to/deploy-cli/completions/deploy.bash
+# Preview first
+shipctl frontend --dry-run
 
-# Or for current session only
-source ./completions/deploy.bash
-```
-
-Now you can use `Tab` to autocomplete services and options.
-
-### 6. Deploy!
-
-```bash
-./deploy.sh frontend
+# Deploy
+shipctl frontend
 ```
 
 ---
@@ -131,85 +132,67 @@ Now you can use `Tab` to autocomplete services and options.
 ### Basic Commands
 
 ```bash
-# Show help with your configured services
-./deploy.sh --help
+# Show help
+shipctl --help
 
-# List all available services
-./deploy.sh --list
+# List available services
+shipctl --list
 
 # Deploy a single service
-./deploy.sh frontend
+shipctl frontend
 
 # Deploy multiple services
-./deploy.sh frontend backend api
+shipctl frontend backend api
 
 # Deploy all configured services
-./deploy.sh --all
+shipctl --all
 ```
 
 ### Deployment Options
 
 ```bash
-# Preview what would happen (no changes made)
-./deploy.sh frontend --dry-run
+# Preview what would happen
+shipctl frontend --dry-run
 
-# Deploy to staging environment
-./deploy.sh frontend --env staging
+# Deploy to staging
+shipctl frontend --env staging
 
-# Deploy with a custom tag
-./deploy.sh frontend --tag v1.2.3
+# Deploy with custom tag
+shipctl frontend --tag v1.2.3
 
-# Skip confirmation prompts
-./deploy.sh frontend --yes
+# Use custom config file
+shipctl --config /path/to/config.env frontend
 
 # Rollback to previous version
-./deploy.sh frontend --rollback
-```
-
-### Build Options
-
-```bash
-# Build and push only, don't deploy
-./deploy.sh frontend --build-only
-
-# Deploy existing image (skip build)
-./deploy.sh frontend --deploy-only --tag abc1234
+shipctl frontend --rollback
 ```
 
 ### Deployment Modes
 
-The tool supports two deployment modes:
-
 | Mode | Command | Description |
 |:-----|:--------|:------------|
-| **Remote** (default) | `./deploy.sh frontend` | Run from laptop, deploy via SSH to server |
-| **Local** | `./deploy.sh frontend --local` | Run directly on server, no SSH required |
-
-```bash
-# Remote mode (default) - deploy from laptop via SSH
-./deploy.sh frontend
-
-# Local mode - run directly on the server
-./deploy.sh frontend --local
-
-# Local mode with dry-run
-./deploy.sh frontend --local --dry-run
-```
-
-**When to use Local Mode:**
-- Running the script directly ON the deployment server
-- CI/CD pipeline running on the same server as Docker
-- No SSH access needed - all commands run locally
+| **Remote** (default) | `shipctl frontend` | Deploy via SSH to server |
+| **Local** | `shipctl frontend --local` | Run directly on server |
 
 ---
 
 ## ⚙️ Configuration
 
+### Config Locations (Priority Order)
+
+| Priority | Location | Use Case |
+|:---------|:---------|:---------|
+| 1 | `--config FILE` | Custom path |
+| 2 | `./deploy.env` | Per-project |
+| 3 | `~/.config/shipctl/` | Global user |
+| 4 | Installation default | Development |
+
 ### Project Structure
 
 ```
-deploy-cli/
-├── deploy.sh                    # Main CLI script
+shipctl/
+├── shipctl                    # Main CLI (symlink as 'shipctl')
+├── install.sh                   # Quick install script
 ├── lib/                         # Library modules
 │   ├── colors.sh               # Terminal colors & logging
 │   ├── utils.sh                # Utility functions
@@ -218,168 +201,53 @@ deploy-cli/
 │   ├── ssh.sh                  # SSH deployment logic
 │   └── git.sh                  # Git repository operations
 ├── completions/
-│   └── deploy.bash             # Shell autocompletion (Bash/Zsh)
+│   └── shipctl.bash            # Shell autocompletion
+├── Formula/
+│   └── shipctl.rb              # Homebrew formula
 ├── config/
-│   ├── services.env            # Your project config (git-ignored)
 │   └── services.env.template   # Configuration template
-├── .env                         # Credentials (git-ignored)
-├── .env.template                # Credentials template
-├── .github/workflows/deploy.yml # GitHub Actions
-├── .gitlab-ci.yml               # GitLab CI/CD
-└── bitbucket-pipelines.yml      # Bitbucket Pipelines
+├── .github/workflows/
+│   ├── deploy.yml              # CI/CD deployment
+│   └── release.yml             # Automated releases
+└── CHANGELOG.md                 # Version history
 ```
 
 ### Service Configuration
 
-For each service, define these variables in `config/services.env`:
-
 | Variable | Required | Description |
 |:---------|:--------:|:------------|
-| `{SERVICE}_IMAGE` | ✅ | Docker image name (e.g., `user/myapp`) |
+| `{SERVICE}_IMAGE` | ✅ | Docker image name |
 | `{SERVICE}_SERVICE_NAME` | ✅ | Service name in docker-compose |
-| `{SERVICE}_CONTAINER_NAME` | ❌ | Container name for logs |
 | `{SERVICE}_DIRECTORY` | ❌ | Path to Dockerfile (folder mode) |
 | `{SERVICE}_GIT_URL` | ❌ | Git repository URL (Git mode) |
-| `{SERVICE}_GIT_REF` | ❌ | Branch, tag, or commit to checkout |
-| `{SERVICE}_GIT_SUBDIR` | ❌ | Subdirectory for monorepos |
+| `{SERVICE}_GIT_REF` | ❌ | Branch, tag, or commit |
 | `{SERVICE}_BUILD_ARGS` | ❌ | Comma-separated build args |
-| `{SERVICE}_ENV_FILE` | ❌ | .env file for build args |
 | `{SERVICE}_HEALTH_TYPE` | ❌ | `http` or `tcp` |
 | `{SERVICE}_HEALTH_PORT` | ❌ | Port for health check |
-| `{SERVICE}_HEALTH_PATH` | ❌ | HTTP endpoint (if type=http) |
-
-> **Note:** If `DIRECTORY` is set, Git configuration is ignored. Use either folder mode OR Git mode per service.
-
-**Folder Mode Example:**
-
-```bash
-FRONTEND_IMAGE="myuser/myapp-frontend"
-FRONTEND_SERVICE_NAME="frontend"
-FRONTEND_CONTAINER_NAME="myapp-frontend"
-FRONTEND_DIRECTORY="../frontend"
-FRONTEND_BUILD_ARGS="NEXT_PUBLIC_API_URL,NODE_ENV"
-FRONTEND_HEALTH_TYPE="http"
-FRONTEND_HEALTH_PORT="3000"
-FRONTEND_HEALTH_PATH="/api/health"
-```
-
-**Git Mode Example:**
-
-```bash
-WORKER_IMAGE="myuser/myapp-worker"
-WORKER_SERVICE_NAME="worker"
-WORKER_CONTAINER_NAME="myapp-worker"
-WORKER_GIT_URL="https://github.com/myuser/worker-service.git"
-WORKER_GIT_REF="main"
-WORKER_GIT_SUBDIR="apps/worker"  # Optional: for monorepos
-WORKER_HEALTH_TYPE="tcp"
-WORKER_HEALTH_PORT="6000"
-```
-
----
-
-## 🔒 Pre-flight Checks
-
-Before each deployment, the tool automatically validates:
-
-| Check | Status |
-|:------|:------:|
-| Docker daemon running | ✅ Required |
-| DockerHub authentication | ✅ Required |
-| SSH key exists | ✅ Required |
-| SSH connection works | ✅ Required |
-| Dockerfile exists | ✅ Required |
-| Remote compose file exists | ✅ Required |
-| Git working directory clean | ⚠️ Warning |
-| Remote disk space | ⚠️ Warning |
-
-Skip checks with `--skip-checks` (not recommended for production).
 
 ---
 
 ## 🔄 CI/CD Integration
 
-### GitHub Actions
-
-Pre-configured workflow at `.github/workflows/deploy.yml`:
-
-- Manual dispatch with service selection
-- Automatic deployment on push to main
-- Environment-aware deployments
-
-**Required Secrets:**
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_PASSWORD`
-- `SSH_PRIVATE_KEY`
-- `REMOTE_HOST`
-- `REMOTE_USER`
-
-### GitLab CI
-
-Configuration at `.gitlab-ci.yml` with per-service deployment jobs.
-
-### Bitbucket Pipelines
-
-Configuration at `bitbucket-pipelines.yml` with custom pipeline triggers.
-
----
-
-## 🛟 Troubleshooting
-
-<details>
-<summary><strong>SSH connection failed</strong></summary>
-
-1. Verify SSH key path in config
-2. Check key permissions: `chmod 600 ~/.ssh/your_key`
-3. Test manually: `ssh -i ~/.ssh/your_key user@host`
-</details>
-
-<details>
-<summary><strong>Docker login failed</strong></summary>
-
-1. Verify credentials in `.env`
-2. Use Docker Hub access token (recommended)
-3. Generate at: https://hub.docker.com/settings/security
-</details>
-
-<details>
-<summary><strong>Service not found</strong></summary>
-
-1. Check `SERVICES` list in `config/services.env`
-2. Ensure service name matches exactly (case-sensitive)
-3. Run `./deploy.sh --list` to see available services
-</details>
+Pre-configured workflows available for:
+- **GitHub Actions** (`.github/workflows/deploy.yml`)
+- **GitLab CI** (`.gitlab-ci.yml`)
+- **Bitbucket Pipelines** (`bitbucket-pipelines.yml`)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) before submitting a Pull Request.
-
-### Quick Overview
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit with convention: `git commit -m "feat: add amazing feature"`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-We use **Conventional Commits** - see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
 ## 📄 License
 
-MIT License - Free for personal and commercial use.
-
-See [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 <p align="center">
   <sub>Built with ❤️ by <a href="https://github.com/arramandhanu">Arya Ramandhanu</a></sub>
-</p>
-<p align="center">
-  <a href="https://linkedin.com/in/arya-ramandhanu">LinkedIn</a> •
-  <a href="https://github.com/arramandhanu">GitHub</a>
 </p>

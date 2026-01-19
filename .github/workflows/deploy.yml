@@ -1,7 +1,7 @@
-# Deploy CLI - GitHub Actions Workflow
+# shipctl - GitHub Actions Workflow
 #
-# This workflow deploys services using the deploy.sh CLI tool.
-# Configure your services in config/services.env before use.
+# This workflow deploys services using shipctl.
+# Configure your services in deploy.env or config/services.env before use.
 #
 # Required Secrets:
 #   DOCKERHUB_USERNAME  - DockerHub username
@@ -10,13 +10,13 @@
 #   REMOTE_HOST         - Deployment server IP/hostname
 #   REMOTE_USER         - SSH user for deployment
 
-name: Deploy Service
+name: shipctl Deploy
 
 on:
   workflow_dispatch:
     inputs:
       service:
-        description: 'Service to deploy (from services.env) or "all"'
+        description: 'Service to deploy (from config) or "all"'
         required: true
         type: string
         default: 'all'
@@ -76,13 +76,13 @@ jobs:
 
       - name: List available services
         run: |
-          chmod +x ./deploy.sh
+          chmod +x ./shipctl
           echo "Available services:"
-          ./deploy.sh --list || true
+          ./shipctl --list || true
 
       - name: Run deployment
         run: |
-          chmod +x ./deploy.sh
+          chmod +x ./shipctl
           
           export SSH_KEY=~/.ssh/deploy_key
           export REMOTE_HOST=${{ secrets.REMOTE_HOST }}
@@ -105,8 +105,8 @@ jobs:
             ARGS="$ARGS $SERVICE"
           fi
           
-          echo "Running: ./deploy.sh $ARGS"
-          ./deploy.sh $ARGS
+          echo "Running: shipctl $ARGS"
+          ./shipctl $ARGS
 
       - name: Deployment Summary
         if: always()

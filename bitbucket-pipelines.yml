@@ -1,7 +1,7 @@
-# Deploy CLI - Bitbucket Pipelines
+# shipctl - Bitbucket Pipelines
 #
-# This pipeline deploys services using the deploy.sh CLI tool.
-# Configure your services in config/services.env before use.
+# This pipeline deploys services using shipctl.
+# Configure your services in deploy.env or config/services.env before use.
 #
 # Required Repository Variables (Settings > Pipelines > Repository Variables):
 #   DOCKERHUB_USERNAME  - DockerHub username
@@ -41,7 +41,7 @@ definitions:
           - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           
           # Make deploy script executable
-          - chmod +x ./deploy.sh
+          - chmod +x ./shipctl
           
           # Export SSH key path
           - export SSH_KEY=~/.ssh/deploy_key
@@ -49,9 +49,9 @@ definitions:
           # Run deployment
           - |
             if [ -n "$SERVICE" ]; then
-              ./deploy.sh ${SERVICE} --yes --env ${ENVIRONMENT:-production}
+              ./shipctl ${SERVICE} --yes --env ${ENVIRONMENT:-production}
             else
-              ./deploy.sh --all --yes --env ${ENVIRONMENT:-production}
+              ./shipctl --all --yes --env ${ENVIRONMENT:-production}
             fi
 
     #--------------------------------------------------------------------------
@@ -61,8 +61,8 @@ definitions:
         name: Validate Configuration
         script:
           - apk add --no-cache bash
-          - chmod +x ./deploy.sh
-          - ./deploy.sh --list || echo "Configure services.env first"
+          - chmod +x ./shipctl
+          - ./shipctl --list || echo "Run: shipctl init"
 
 pipelines:
   #----------------------------------------------------------------------------
@@ -103,9 +103,9 @@ pipelines:
             - chmod 600 ~/.ssh/deploy_key
             - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
             - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./deploy.sh
+            - chmod +x ./shipctl
             - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh --all --yes --env ${ENVIRONMENT}
+            - ./shipctl --all --yes --env ${ENVIRONMENT}
 
     # Dry run for testing
     dry-run:
@@ -115,8 +115,8 @@ pipelines:
             - docker
           script:
             - apk add --no-cache bash git
-            - chmod +x ./deploy.sh
-            - ./deploy.sh --all --dry-run
+            - chmod +x ./shipctl
+            - ./shipctl --all --dry-run
 
   #----------------------------------------------------------------------------
   # Branch Pipelines
@@ -146,9 +146,9 @@ pipelines:
             - chmod 600 ~/.ssh/deploy_key
             - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
             - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./deploy.sh
+            - chmod +x ./shipctl
             - export SSH_KEY=~/.ssh/deploy_key
-            - ./deploy.sh --all --yes --env staging
+            - ./shipctl --all --yes --env staging
 
   #----------------------------------------------------------------------------
   # Pull Request Pipelines

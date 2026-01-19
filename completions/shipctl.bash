@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 #==============================================================================
-# DEPLOY CLI - SHELL AUTOCOMPLETION
+# SHIPCTL - SHELL AUTOCOMPLETION
 #
 # Installation:
-#   Bash:  source /path/to/deploy-cli/completions/deploy.bash
-#   Zsh:   source /path/to/deploy-cli/completions/deploy.bash
+#   Bash:  source /path/to/shipctl/completions/shipctl.bash
+#   Zsh:   source /path/to/shipctl/completions/shipctl.bash
 #
 # Add to your shell profile (~/.bashrc, ~/.zshrc) for persistent completion.
 #==============================================================================
 
-_deploy_completions() {
+_shipctl_completions() {
     local cur prev opts services config_file deploy_root
     
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    # Find deploy root (where deploy.sh is located)
+    # Find deploy root (where shipctl is located)
     deploy_root=""
     for word in "${COMP_WORDS[@]}"; do
-        if [[ "$word" == *deploy.sh ]]; then
+        if [[ "$word" == *shipctl* ]]; then
             deploy_root=$(dirname "$word")
             break
         fi
@@ -31,7 +31,7 @@ _deploy_completions() {
     fi
     
     # All available options
-    opts="-h --help -v --version -l --list -a --all -e --env -t --tag -n --dry-run -y --yes --skip-checks --build-only --deploy-only --rollback --no-logs --local"
+    opts="-h --help -v --version -l --list -a --all -e --env -t --tag -c --config -n --dry-run -y --yes --skip-checks --build-only --deploy-only --rollback --no-logs --local init"
     
     # Handle option arguments
     case "${prev}" in
@@ -48,6 +48,11 @@ _deploy_completions() {
             fi
             return 0
             ;;
+        -c|--config)
+            # Complete file paths
+            COMPREPLY=( $(compgen -f -- "${cur}") )
+            return 0
+            ;;
     esac
     
     # If current word starts with dash, complete options
@@ -58,11 +63,14 @@ _deploy_completions() {
     
     # Try to load services from config
     services=""
-    config_file="${deploy_root}/config/services.env"
     
-    if [[ -f "$config_file" ]]; then
-        services=$(grep -E "^SERVICES=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr ',' ' ')
-    fi
+    # Check multiple config locations
+    for cfg in "./deploy.env" "${HOME}/.config/shipctl/services.env" "${deploy_root}/config/services.env"; do
+        if [[ -f "$cfg" ]]; then
+            services=$(grep -E "^SERVICES=" "$cfg" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr ',' ' ')
+            break
+        fi
+    done
     
     # Fallback services if config not found
     if [[ -z "$services" ]]; then
@@ -74,9 +82,8 @@ _deploy_completions() {
     return 0
 }
 
-# Register completion for deploy.sh and common invocation patterns
-complete -F _deploy_completions deploy.sh
-complete -F _deploy_completions ./deploy.sh
-
-# Also register for 'deploy' if user has aliased it
-complete -F _deploy_completions deploy
+# Register completion for shipctl and common invocation patterns
+complete -F _shipctl_completions shipctl
+complete -F _shipctl_completions ./shipctl
+complete -F _shipctl_completions deploy.sh
+complete -F _shipctl_completions ./deploy.sh
