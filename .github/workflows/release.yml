@@ -81,16 +81,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  update-homebrew:
+  update-formula:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout homebrew-tap
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          repository: arramandhanu/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get version and SHA
         id: info
@@ -108,10 +107,10 @@ jobs:
 
       - name: Update formula
         run: |
-          cat > homebrew-tap/Formula/deploy-cli.rb << 'EOF'
-          class DeployCli < Formula
+          cat > Formula/shipctl.rb << EOF
+          class Shipctl < Formula
             desc "Professional Docker deployment automation tool"
-            homepage "https://github.com/arramandhanu/deploy-cli"
+            homepage "https://github.com/${{ github.repository }}"
             url "${{ steps.info.outputs.URL }}"
             sha256 "${{ steps.info.outputs.SHA256 }}"
             license "MIT"
@@ -122,23 +121,26 @@ jobs:
 
             def install
               prefix.install Dir["*"]
-              bin.install_symlink prefix/"shipctl" => "deploy"
-              
-              # Install completions
-              bash_completion.install "completions/deploy.bash" => "deploy"
+              bin.install_symlink prefix/"shipctl" => "shipctl"
+              bash_completion.install "completions/shipctl.bash" => "shipctl"
+            end
+
+            def caveats
+              <<~EOS
+                Run 'shipctl init' in your project directory to get started.
+              EOS
             end
 
             test do
-              system "#{bin}/deploy", "--version"
+              system "#{bin}/shipctl", "--version"
             end
           end
           EOF
 
       - name: Commit and push
         run: |
-          cd homebrew-tap
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add Formula/deploy-cli.rb
-          git commit -m "Update deploy-cli to ${{ steps.info.outputs.VERSION }}" || exit 0
+          git add Formula/shipctl.rb
+          git diff --staged --quiet || git commit -m "chore: update formula to v${{ steps.info.outputs.VERSION }}"
           git push
