@@ -121,10 +121,17 @@ jobs:
             depends_on "git"
 
             def install
+              # Install completions first (before moving files to prefix)
+              if File.exist?("completions/shipctl.bash")
+                bash_completion.install "completions/shipctl.bash" => "shipctl"
+                zsh_completion.install "completions/shipctl.bash" => "_shipctl"
+              end
+              
+              # Install all files to prefix
               prefix.install Dir["*"]
+              
+              # Create symlink to bin
               bin.install_symlink prefix/"shipctl" => "shipctl"
-              bash_completion.install prefix/"completions/shipctl.bash" => "shipctl"
-              zsh_completion.install prefix/"completions/shipctl.bash" => "_shipctl"
             end
 
             def caveats
