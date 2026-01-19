@@ -27,6 +27,7 @@ source "${DEPLOY_ROOT}/lib/utils.sh"
 source "${DEPLOY_ROOT}/lib/checks.sh"
 source "${DEPLOY_ROOT}/lib/docker.sh"
 source "${DEPLOY_ROOT}/lib/ssh.sh"
+source "${DEPLOY_ROOT}/lib/git.sh"
 
 #------------------------------------------------------------------------------
 # Version
@@ -251,6 +252,12 @@ deploy_service() {
     container_name=$(get_service_var "$service" "CONTAINER_NAME")
     local directory
     directory=$(get_service_var "$service" "DIRECTORY")
+    local git_url
+    git_url=$(get_service_var "$service" "GIT_URL")
+    local git_ref
+    git_ref=$(get_service_var "$service" "GIT_REF")
+    local git_subdir
+    git_subdir=$(get_service_var "$service" "GIT_SUBDIR")
     local build_args_str
     build_args_str=$(get_service_var "$service" "BUILD_ARGS")
     local env_file
@@ -268,17 +275,28 @@ deploy_service() {
         return 1
     fi
     
-    # Default directory
-    directory="${directory:-${DEPLOY_ROOT}}"
-    
-    # Resolve path - handle relative paths properly
-    if [[ "$directory" != /* ]]; then
-        # Relative path - resolve from DEPLOY_ROOT
-        directory=$(cd "${DEPLOY_ROOT}" && cd "${directory}" 2>/dev/null && pwd)
-        if [[ -z "$directory" ]]; then
-            # Fallback: just prepend DEPLOY_ROOT
-            directory="${DEPLOY_ROOT}/${directory}"
+    # Resolve build directory
+    # Priority: DIRECTORY (folder) takes precedence over GIT_URL
+    if [[ -n "$directory" ]]; then
+        # Folder mode - use local directory
+        if [[ "$directory" != /* ]]; then
+            directory=$(cd "${DEPLOY_ROOT}" && cd "${directory}" 2>/dev/null && pwd)
+            if [[ -z "$directory" ]]; then
+                directory="${DEPLOY_ROOT}/${directory}"
+            fi
         fi
+    elif [[ -n "$git_url" ]]; then
+        # Git mode - clone repository first
+        local git_result
+        git_result=$(prepare_git_repo "$service" "$git_url" "$git_ref" "$git_subdir")
+        if [[ $? -ne 0 ]]; then
+            log_error "Failed to prepare Git repository"
+            return 1
+        fi
+        directory="$git_result"
+    else
+        # Default to DEPLOY_ROOT if nothing specified
+        directory="${DEPLOY_ROOT}"
     fi
     
     print_section "DEPLOYING: ${service}"
@@ -315,7 +333,7 @@ deploy_service() {
     
     # Pre-flight checks
     if [[ "$SKIP_CHECKS" != "true" ]]; then
-        if ! run_preflight_checks "$directory"; then
+        if ! run_preflight_checks "$directory" "false" "$git_url"; then
             log_error "Pre-flight checks failed"
             return 1
         fi

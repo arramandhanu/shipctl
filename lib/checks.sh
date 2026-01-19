@@ -231,6 +231,7 @@ check_remote_disk_space() {
 run_preflight_checks() {
     local service_dir="${1:-.}"
     local skip_git="${2:-false}"
+    local git_url="${3:-}"
     local failed=0
     
     print_section "PRE-FLIGHT CHECKS"
@@ -242,21 +243,28 @@ run_preflight_checks() {
     check_docker_running || ((failed++))
     check_docker_login || ((failed++))
     
-    # Git (optional)
+    # Git (optional - check working directory clean)
     if [[ "$skip_git" != "true" ]]; then
         check_git_clean "$service_dir" || true  # Warning only
     fi
     
-    # SSH
-    check_ssh_key || ((failed++))
-    check_ssh_connection || ((failed++))
+    # Git URL validation (if using Git source)
+    if [[ -n "$git_url" ]]; then
+        check_git_url "$git_url" || ((failed++))
+    fi
     
-    # Dockerfile
-    check_dockerfile "$service_dir" || ((failed++))
+    # SSH checks (skip in LOCAL_MODE)
+    if [[ "${LOCAL_MODE:-false}" != "true" ]]; then
+        check_ssh_key || ((failed++))
+        check_ssh_connection || ((failed++))
+        check_remote_compose || ((failed++))
+        check_remote_disk_space || true  # Warning only
+    fi
     
-    # Remote
-    check_remote_compose || ((failed++))
-    check_remote_disk_space || true  # Warning only
+    # Dockerfile check (only for folder mode, Git mode checks during prepare)
+    if [[ -z "$git_url" ]]; then
+        check_dockerfile "$service_dir" || ((failed++))
+    fi
     
     echo ""
     

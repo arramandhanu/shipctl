@@ -31,12 +31,13 @@
 |:--------|:------------|
 | 🎯 **Unified CLI** | Single `./deploy.sh` command for all deployment operations |
 | 📦 **Multi-Service** | Deploy one, multiple, or all services at once |
-| � **Configurable** | Define your own project name, services, and servers |
-| �🔍 **Pre-flight Checks** | Validates Docker, SSH, Git before any deployment |
+| 🔧 **Configurable** | Define your own project name, services, and servers |
+| 🔍 **Pre-flight Checks** | Validates Docker, SSH, Git before any deployment |
 | 👀 **Dry-Run Mode** | Preview changes without executing anything |
 | ⏪ **Rollback** | Instantly revert to the previous deployed version |
 | 🌍 **Multi-Environment** | Support for staging, production, or custom environments |
 | 🏥 **Health Checks** | HTTP and TCP verification after deployment |
+| 📂 **Git Repository Support** | Clone and build from Git URLs (SSH or HTTPS) |
 | 🎨 **Beautiful Output** | Colored terminal UI with status icons |
 
 ---
@@ -201,7 +202,8 @@ deploy-cli/
 │   ├── utils.sh                # Utility functions
 │   ├── checks.sh               # Pre-flight validations
 │   ├── docker.sh               # Docker operations
-│   └── ssh.sh                  # SSH deployment logic
+│   ├── ssh.sh                  # SSH deployment logic
+│   └── git.sh                  # Git repository operations
 ├── config/
 │   ├── services.env            # Your project config (git-ignored)
 │   └── services.env.template   # Configuration template
@@ -221,14 +223,19 @@ For each service, define these variables in `config/services.env`:
 | `{SERVICE}_IMAGE` | ✅ | Docker image name (e.g., `user/myapp`) |
 | `{SERVICE}_SERVICE_NAME` | ✅ | Service name in docker-compose |
 | `{SERVICE}_CONTAINER_NAME` | ❌ | Container name for logs |
-| `{SERVICE}_DIRECTORY` | ✅ | Path to Dockerfile |
+| `{SERVICE}_DIRECTORY` | ❌ | Path to Dockerfile (folder mode) |
+| `{SERVICE}_GIT_URL` | ❌ | Git repository URL (Git mode) |
+| `{SERVICE}_GIT_REF` | ❌ | Branch, tag, or commit to checkout |
+| `{SERVICE}_GIT_SUBDIR` | ❌ | Subdirectory for monorepos |
 | `{SERVICE}_BUILD_ARGS` | ❌ | Comma-separated build args |
 | `{SERVICE}_ENV_FILE` | ❌ | .env file for build args |
 | `{SERVICE}_HEALTH_TYPE` | ❌ | `http` or `tcp` |
 | `{SERVICE}_HEALTH_PORT` | ❌ | Port for health check |
 | `{SERVICE}_HEALTH_PATH` | ❌ | HTTP endpoint (if type=http) |
 
-**Example:**
+> **Note:** If `DIRECTORY` is set, Git configuration is ignored. Use either folder mode OR Git mode per service.
+
+**Folder Mode Example:**
 
 ```bash
 FRONTEND_IMAGE="myuser/myapp-frontend"
@@ -239,6 +246,19 @@ FRONTEND_BUILD_ARGS="NEXT_PUBLIC_API_URL,NODE_ENV"
 FRONTEND_HEALTH_TYPE="http"
 FRONTEND_HEALTH_PORT="3000"
 FRONTEND_HEALTH_PATH="/api/health"
+```
+
+**Git Mode Example:**
+
+```bash
+WORKER_IMAGE="myuser/myapp-worker"
+WORKER_SERVICE_NAME="worker"
+WORKER_CONTAINER_NAME="myapp-worker"
+WORKER_GIT_URL="https://github.com/myuser/worker-service.git"
+WORKER_GIT_REF="main"
+WORKER_GIT_SUBDIR="apps/worker"  # Optional: for monorepos
+WORKER_HEALTH_TYPE="tcp"
+WORKER_HEALTH_PORT="6000"
 ```
 
 ---
