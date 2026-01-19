@@ -153,10 +153,11 @@ show_help() {
     echo -e "    ${WHITE}shipctl my-service --local${RESET}"
     echo ""
     echo -e "${BOLD}${YELLOW}CONFIG LOCATIONS${RESET} (in order of priority)"
-    echo -e "    1. ${CYAN}--config FILE${RESET}           Custom path"
+    echo -e "    1. ${CYAN}--config FILE${RESET}           Custom path via flag"
     echo -e "    2. ${CYAN}./deploy.env${RESET}            Per-project config"
-    echo -e "    3. ${CYAN}~/.config/shipctl/${RESET}   Global user config"
-    echo -e "    4. ${CYAN}DEPLOY_ROOT/config/${RESET}     Installation default"
+    echo -e "    3. ${CYAN}~/.config/shipctl/${RESET}      User global config"
+    echo -e "    4. ${CYAN}/etc/shipctl/${RESET}           System-wide config (Linux)"
+    echo -e "    5. ${CYAN}DEPLOY_ROOT/config/${RESET}     Installation default"
     echo ""
     echo -e "${BOLD}${YELLOW}ENVIRONMENT${RESET}"
     echo -e "    ${CYAN}DOCKERHUB_USERNAME${RESET}  DockerHub username ${RED}(required)${RESET}"
@@ -216,7 +217,8 @@ list_available_services() {
 
 #------------------------------------------------------------------------------
 # Resolve configuration file path
-# Priority: 1. --config flag  2. ./deploy.env  3. ~/.config/shipctl/  4. DEPLOY_ROOT/config/
+# Priority: 1. --config flag  2. ./deploy.env  3. ~/.config/shipctl/  
+#          4. /etc/shipctl/ (system-wide)  5. DEPLOY_ROOT/config/
 #------------------------------------------------------------------------------
 resolve_config_path() {
     local config_file=""
@@ -238,13 +240,19 @@ resolve_config_path() {
         return 0
     fi
     
-    # 3. Global user config
+    # 3. Global user config (~/.config/shipctl/)
     if [[ -f "${CONFIG_DIR}/services.env" ]]; then
         echo "${CONFIG_DIR}/services.env"
         return 0
     fi
     
-    # 4. Default: DEPLOY_ROOT/config (for development/manual installs)
+    # 4. System-wide config (/etc/shipctl/) - for Linux servers
+    if [[ -f "/etc/shipctl/services.env" ]]; then
+        echo "/etc/shipctl/services.env"
+        return 0
+    fi
+    
+    # 5. Default: DEPLOY_ROOT/config (for development/manual installs)
     if [[ -f "${DEPLOY_ROOT}/config/services.env" ]]; then
         echo "${DEPLOY_ROOT}/config/services.env"
         return 0
@@ -265,11 +273,11 @@ load_config() {
         log_error "No configuration file found"
         echo ""
         echo "Create a config file in one of these locations:"
-        echo "  1. ./deploy.env                    (per-project)"
-        echo "  2. ${CONFIG_DIR}/services.env      (global)"
-        echo "  3. ${DEPLOY_ROOT}/config/services.env"
+        echo "  1. ./deploy.env                       (per-project)"
+        echo "  2. ${CONFIG_DIR}/services.env         (user global)"
+        echo "  3. /etc/shipctl/services.env          (system-wide)"
         echo ""
-        echo "Or run: deploy init"
+        echo "Or run: shipctl init"
         exit 1
     fi
     

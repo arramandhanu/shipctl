@@ -181,10 +181,11 @@ shipctl frontend --rollback
 
 | Priority | Location | Use Case |
 |:---------|:---------|:---------|
-| 1 | `--config FILE` | Custom path |
-| 2 | `./deploy.env` | Per-project |
-| 3 | `~/.config/shipctl/` | Global user |
-| 4 | Installation default | Development |
+| 1 | `--config FILE` | Custom path via flag |
+| 2 | `./deploy.env` | Per-project config |
+| 3 | `~/.config/shipctl/` | User global config |
+| 4 | `/etc/shipctl/` | System-wide (Linux) |
+| 5 | Installation default | Development only |
 
 ### Project Structure
 
