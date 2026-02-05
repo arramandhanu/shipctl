@@ -35,6 +35,17 @@ source "${DEPLOY_ROOT}/lib/docker.sh"
 source "${DEPLOY_ROOT}/lib/ssh.sh"
 source "${DEPLOY_ROOT}/lib/git.sh"
 
+# Orchestrator and provider modules
+source "${DEPLOY_ROOT}/lib/orchestrator.sh"
+source "${DEPLOY_ROOT}/lib/orchestrators/compose.sh"
+source "${DEPLOY_ROOT}/lib/orchestrators/swarm.sh"
+source "${DEPLOY_ROOT}/lib/orchestrators/kubernetes.sh"
+source "${DEPLOY_ROOT}/lib/provider.sh"
+source "${DEPLOY_ROOT}/lib/providers/aws.sh"
+source "${DEPLOY_ROOT}/lib/providers/gcp.sh"
+source "${DEPLOY_ROOT}/lib/providers/azure.sh"
+source "${DEPLOY_ROOT}/lib/providers/alibaba.sh"
+
 #------------------------------------------------------------------------------
 # Version
 #------------------------------------------------------------------------------
@@ -54,6 +65,12 @@ ENVIRONMENT="production"
 ROLLBACK=false
 LOCAL_MODE=false
 CUSTOM_CONFIG=""
+
+# Orchestrator and cloud provider defaults
+ORCHESTRATOR="${ORCHESTRATOR:-compose}"
+CLOUD_PROVIDER="${CLOUD_PROVIDER:-local}"
+STACK_NAME="${STACK_NAME:-}"
+CLUSTER_NAME="${CLUSTER_NAME:-}"
 
 # Config directories
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/shipctl"
@@ -119,7 +136,16 @@ show_help() {
     echo -e "    ${GRAY}--deploy-only${RESET}       Deploy only, skip build (requires --tag)"
     echo -e "    ${GRAY}--rollback${RESET}          Rollback to previous version"
     echo -e "    ${GRAY}--no-logs${RESET}           Don't show container logs after deploy"
-    echo -e "    ${GREEN}--local${RESET}             Run locally on server (no SSH, for server-side deployment)"
+    echo -e "    ${GREEN}--local${RESET}             Run locally on server (no SSH)"
+    echo ""
+    echo -e "${BOLD}${YELLOW}ORCHESTRATION${RESET}"
+    echo -e "    ${GREEN}--orchestrator${RESET} ${GRAY}TYPE${RESET} Orchestrator: compose (default), swarm, kubernetes"
+    echo -e "    ${GREEN}--stack${RESET} ${GRAY}NAME${RESET}         Stack name for Docker Swarm"
+    echo -e "    ${GREEN}--namespace${RESET} ${GRAY}NS${RESET}       Kubernetes namespace"
+    echo ""
+    echo -e "${BOLD}${YELLOW}CLOUD PROVIDERS${RESET}"
+    echo -e "    ${GREEN}--provider${RESET} ${GRAY}CLOUD${RESET}     Cloud provider: local (default), aws, gcp, azure, alibaba"
+    echo -e "    ${GREEN}--cluster${RESET} ${GRAY}NAME${RESET}       Cluster name for ECS/AKS/GKE"
     echo ""
     echo -e "${BOLD}${YELLOW}COMMANDS${RESET}"
     echo -e "    ${GREEN}init${RESET}                Create config template in current directory"
@@ -151,6 +177,18 @@ show_help() {
     echo ""
     echo -e "    ${GRAY}# Deploy locally on server (no SSH needed)${RESET}"
     echo -e "    ${WHITE}shipctl my-service --local${RESET}"
+    echo ""
+    echo -e "    ${GRAY}# Deploy to Docker Swarm${RESET}"
+    echo -e "    ${WHITE}shipctl my-service --orchestrator swarm${RESET}"
+    echo ""
+    echo -e "    ${GRAY}# Deploy to AWS ECS${RESET}"
+    echo -e "    ${WHITE}shipctl my-service --provider aws --cluster my-cluster${RESET}"
+    echo ""
+    echo -e "    ${GRAY}# Deploy to GCP Cloud Run${RESET}"
+    echo -e "    ${WHITE}shipctl my-service --provider gcp${RESET}"
+    echo ""
+    echo -e "    ${GRAY}# Deploy to Kubernetes${RESET}"
+    echo -e "    ${WHITE}shipctl my-service --orchestrator kubernetes${RESET}"
     echo ""
     echo -e "${BOLD}${YELLOW}CONFIG LOCATIONS${RESET} (in order of priority)"
     echo -e "    1. ${CYAN}--config FILE${RESET}           Custom path via flag"
@@ -364,9 +402,7 @@ deploy_service() {
     fi
     
     # Resolve build directory
-    # Priority: DIRECTORY (folder) takes precedence over GIT_URL
     if [[ -n "$directory" ]]; then
-        # Folder mode - use local directory
         if [[ "$directory" != /* ]]; then
             directory=$(cd "${DEPLOY_ROOT}" && cd "${directory}" 2>/dev/null && pwd)
             if [[ -z "$directory" ]]; then
@@ -374,7 +410,6 @@ deploy_service() {
             fi
         fi
     elif [[ -n "$git_url" ]]; then
-        # Git mode - clone repository first
         local git_result
         git_result=$(prepare_git_repo "$service" "$git_url" "$git_ref" "$git_subdir")
         if [[ $? -ne 0 ]]; then
@@ -383,22 +418,30 @@ deploy_service() {
         fi
         directory="$git_result"
     else
-        # Default to DEPLOY_ROOT if nothing specified
         directory="${DEPLOY_ROOT}"
     fi
     
     print_section "DEPLOYING: ${service}"
     
+    # Determine deployment mode
+    local is_cloud=false
+    if provider_is_cloud "$CLOUD_PROVIDER"; then
+        is_cloud=true
+    fi
+    
     print_status "Image" "$image"
     print_status "Tag" "$tag"
     print_status "Service" "$service_name"
-    print_status "Container" "$container_name"
-    print_status "Directory" "$directory"
-    print_status "Environment" "$ENVIRONMENT" "$YELLOW"
-    if [[ "$LOCAL_MODE" == "true" ]]; then
-        print_status "Mode" "LOCAL (no SSH)" "$GREEN"
+    if [[ "$is_cloud" == "true" ]]; then
+        print_status "Provider" "$CLOUD_PROVIDER" "$CYAN"
+        print_status "Registry" "$(provider_get_registry_url "$CLOUD_PROVIDER")"
     else
-        print_status "Mode" "REMOTE via SSH" "$CYAN"
+        print_status "Orchestrator" "$ORCHESTRATOR" "$BLUE"
+        if [[ "$LOCAL_MODE" == "true" ]]; then
+            print_status "Mode" "LOCAL (no SSH)" "$GREEN"
+        else
+            print_status "Mode" "REMOTE via SSH" "$CYAN"
+        fi
     fi
     
     echo ""
@@ -409,13 +452,26 @@ deploy_service() {
         echo ""
         
         if [[ "$SKIP_BUILD" != "true" ]]; then
-            docker_build_dry_run "$image" "$tag" "$directory" "Dockerfile"
+            if [[ "$is_cloud" == "true" ]]; then
+                # Dry run for cloud build/push
+                echo "[DRY-RUN] Build & Push to Cloud Registry"
+            else
+                docker_build_dry_run "$image" "$tag" "$directory" "Dockerfile"
+            fi
         fi
         
         if [[ "$SKIP_DEPLOY" != "true" ]]; then
-            ssh_deploy_dry_run "$REMOTE_HOST" "$REMOTE_COMPOSE_DIR" "$image" "$tag" "$service_name" "$LOCAL_MODE"
+            if [[ "$is_cloud" == "true" ]]; then
+                case "$CLOUD_PROVIDER" in
+                    aws) aws_deploy_dry_run "$image" "$tag" "$service_name" "$CLUSTER_NAME" ;;
+                    gcp) gcp_deploy_dry_run "$image" "$tag" "$service_name" ;;
+                    azure) azure_deploy_dry_run "$image" "$tag" "$container_name" ;;
+                    alibaba) alibaba_deploy_dry_run "$image" "$tag" "$container_name" ;;
+                esac
+            else
+                orchestrator_deploy_dry_run "$image" "$tag" "$service_name" "$REMOTE_COMPOSE_DIR" "$STACK_NAME"
+            fi
         fi
-        
         return 0
     fi
     
@@ -437,28 +493,26 @@ deploy_service() {
         fi
     fi
     
-    # Get current tag for rollback
-    local current_tag=""
-    if [[ "$ROLLBACK" != "true" ]]; then
-        if [[ "$LOCAL_MODE" == "true" ]]; then
-            current_tag=$(local_get_current_tag "$container_name" 2>/dev/null || echo "")
-        else
-            current_tag=$(ssh_get_current_tag "$REMOTE_HOST" "$REMOTE_USER" "$SSH_KEY" "$container_name" 2>/dev/null || echo "")
-        fi
-        if [[ -n "$current_tag" ]]; then
-            log_info "Current running tag: $current_tag (saved for rollback)"
-            echo "$current_tag" > "${DEPLOY_ROOT}/.deploy-backups/${service}.last"
-        fi
-    fi
-    
     local start_time
     start_time=$(date +%s)
+    
+    # Authenticate Provider / Registry
+    if [[ "$SKIP_BUILD" != "true" || "$is_cloud" == "true" ]]; then
+        if [[ "$is_cloud" == "true" ]]; then
+            if ! provider_registry_login "$CLOUD_PROVIDER"; then
+                log_error "Registry login failed"
+                return 1
+            fi
+        elif [[ -n "$DOCKERHUB_USERNAME" ]]; then
+            docker_login || true
+        fi
+    fi
     
     # Build & Push
     if [[ "$SKIP_BUILD" != "true" ]]; then
         print_section "BUILD & PUSH"
         
-        # Load service-specific env file if specified
+        # Load service-specific env file
         if [[ -n "$env_file" && -f "${directory}/${env_file}" ]]; then
             log_info "Loading build environment from ${env_file}"
             load_env_file "${directory}/${env_file}"
@@ -469,7 +523,7 @@ deploy_service() {
         if [[ -n "$build_args_str" ]]; then
             IFS=',' read -ra arg_names <<< "$build_args_str"
             for arg_name in "${arg_names[@]}"; do
-                arg_name=$(echo "$arg_name" | xargs)  # trim
+                arg_name=$(echo "$arg_name" | xargs)
                 local arg_value="${!arg_name:-}"
                 if [[ -n "$arg_value" ]]; then
                     build_args+=("${arg_name}=${arg_value}")
@@ -477,16 +531,25 @@ deploy_service() {
             done
         fi
         
-        # Build
+        # Build image
         if ! docker_build "$image" "$tag" "$directory" "Dockerfile" "${build_args[@]}"; then
             log_error "Build failed"
             return 1
         fi
         
-        # Push
-        if ! docker_push "$image" "$tag"; then
-            log_error "Push failed"
-            return 1
+        # Push image
+        if [[ "$is_cloud" == "true" ]]; then
+            # Push to Cloud Registry
+            if ! provider_push_image "$CLOUD_PROVIDER" "$image" "$image" "$tag"; then
+                log_error "Push to provider registry failed"
+                return 1
+            fi
+        else
+            # Push to Docker Hub
+            if ! docker_push "$image" "$tag"; then
+                log_error "Push failed"
+                return 1
+            fi
         fi
     fi
     
@@ -494,47 +557,48 @@ deploy_service() {
     if [[ "$SKIP_DEPLOY" != "true" ]]; then
         print_section "DEPLOY"
         
-        if [[ "$LOCAL_MODE" == "true" ]]; then
-            # Local deployment (no SSH)
-            if ! local_deploy "$REMOTE_COMPOSE_DIR" "$image" "$tag" "$service_name" "$container_name"; then
-                log_error "Local deployment failed"
-                return 1
-            fi
-        else
-            # Remote deployment via SSH
-            if ! ssh_deploy "$REMOTE_HOST" "$REMOTE_USER" "$REMOTE_COMPOSE_DIR" "$SSH_KEY" \
-                           "$image" "$tag" "$service_name" "$container_name"; then
-                log_error "Deployment failed"
-                return 1
-            fi
-        fi
-        
-        # Health check
-        if [[ -n "$health_type" && -n "$health_port" ]]; then
-            print_section "HEALTH CHECK"
+        if [[ "$is_cloud" == "true" ]]; then
+            # Cloud Provider Deployment
+            local deploy_args=()
+            [[ -n "$CLUSTER_NAME" ]] && deploy_args+=("$CLUSTER_NAME")
             
+            if ! provider_deploy "$CLOUD_PROVIDER" "$image" "$tag" "$service_name" "${deploy_args[@]}"; then
+                log_error "Cloud deployment failed"
+                return 1
+            fi
+            
+        else
+            # Orchestrator Deployment (Compose / Swarm)
             if [[ "$LOCAL_MODE" == "true" ]]; then
-                # Local health check
-                case "$health_type" in
-                    http)
-                        local_health_check_http "$health_port" "${health_path:-/health}" 30 || true
-                        ;;
-                    tcp)
-                        local_health_check_tcp "$health_port" 30 || true
-                        ;;
-                esac
+                # Run orchestrator locally
+                if ! orchestrator_deploy "$ORCHESTRATOR" "$image" "$tag" "$service_name" "$REMOTE_COMPOSE_DIR" "$STACK_NAME"; then
+                    log_error "Local orchestration failed"
+                    return 1
+                fi
             else
-                # Remote health check
-                case "$health_type" in
-                    http)
-                        ssh_health_check_http "$REMOTE_HOST" "$REMOTE_USER" "$SSH_KEY" \
-                                             "$health_port" "${health_path:-/health}" 30 "$container_name" || true
-                        ;;
-                    tcp)
-                        ssh_health_check_tcp "$REMOTE_HOST" "$REMOTE_USER" "$SSH_KEY" \
-                                            "$health_port" 30 || true
-                        ;;
-                esac
+                # Run remotely via SSH
+                if ! ssh_deploy "$REMOTE_HOST" "$REMOTE_USER" "$REMOTE_COMPOSE_DIR" "$SSH_KEY" \
+                               "$image" "$tag" "$service_name" "$container_name" "$ORCHESTRATOR" "$STACK_NAME"; then
+                    log_error "Remote deployment failed"
+                    return 1
+                fi
+            fi
+            
+            # Health Check (only for orchestrator mode, cloud providers handle their own health)
+            if [[ -n "$health_type" && -n "$health_port" ]]; then
+                print_section "HEALTH CHECK"
+                
+                if [[ "$LOCAL_MODE" == "true" ]]; then
+                    case "$health_type" in
+                        http) local_health_check_http "$health_port" "${health_path:-/health}" 30 || true ;;
+                        tcp)  local_health_check_tcp "$health_port" 30 || true ;;
+                    esac
+                else
+                    case "$health_type" in
+                        http) ssh_health_check_http "$REMOTE_HOST" "$REMOTE_USER" "$SSH_KEY" "$health_port" "${health_path:-/health}" 30 "$container_name" || true ;;
+                        tcp)  ssh_health_check_tcp "$REMOTE_HOST" "$REMOTE_USER" "$SSH_KEY" "$health_port" 30 || true ;;
+                    esac
+                fi
             fi
         fi
     fi
@@ -545,10 +609,6 @@ deploy_service() {
     
     echo ""
     log_done "Deployment completed in $(relative_time $duration)"
-    print_status "Image" "${image}:${tag}"
-    if [[ -n "$current_tag" ]]; then
-        print_status "Previous" "$current_tag" "$GRAY"
-    fi
     
     return 0
 }
@@ -751,6 +811,22 @@ main() {
             --local)
                 LOCAL_MODE=true
                 shift
+                ;;
+            --orchestrator)
+                ORCHESTRATOR="$2"
+                shift 2
+                ;;
+            --provider)
+                CLOUD_PROVIDER="$2"
+                shift 2
+                ;;
+            --stack)
+                STACK_NAME="$2"
+                shift 2
+                ;;
+            --cluster)
+                CLUSTER_NAME="$2"
+                shift 2
                 ;;
             init)
                 cmd_init

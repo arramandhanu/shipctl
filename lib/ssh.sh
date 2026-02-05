@@ -26,6 +26,9 @@ ssh_exec() {
 #------------------------------------------------------------------------------
 # Deploy service via docker-compose
 #------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# Deploy service via SSH (delegates to Compose or Swarm)
+#------------------------------------------------------------------------------
 ssh_deploy() {
     local remote_host="${1:-${REMOTE_HOST:-}}"
     local remote_user="${2:-${REMOTE_USER:-}}"
@@ -35,11 +38,35 @@ ssh_deploy() {
     local tag="$6"
     local service_name="$7"
     local container_name="$8"
+    local orchestrator="${9:-${ORCHESTRATOR:-compose}}"
+    local stack_name="${10:-${STACK_NAME:-shipctl}}"
     
     # Expand ~ if present
     ssh_key="${ssh_key/#\~/$HOME}"
     
-    log_info "Deploying to ${remote_host}..."
+    if [[ "$orchestrator" == "swarm" ]]; then
+        ssh_deploy_swarm "$remote_host" "$remote_user" "$remote_compose_dir" "$ssh_key" \
+                        "$image_name" "$tag" "$service_name" "$stack_name"
+    else
+        ssh_deploy_compose "$remote_host" "$remote_user" "$remote_compose_dir" "$ssh_key" \
+                          "$image_name" "$tag" "$service_name" "$container_name"
+    fi
+}
+
+#------------------------------------------------------------------------------
+# Deploy service via docker-compose (SSH)
+#------------------------------------------------------------------------------
+ssh_deploy_compose() {
+    local remote_host="$1"
+    local remote_user="$2"
+    local remote_compose_dir="$3"
+    local ssh_key="$4"
+    local image_name="$5"
+    local tag="$6"
+    local service_name="$7"
+    local container_name="$8"
+    
+    log_info "Deploying to ${remote_host} (Compose)..."
     
     local deploy_script="
 set -euo pipefail
@@ -72,6 +99,63 @@ docker logs --tail=50 ${container_name} 2>&1 || true
         return 0
     else
         log_error "Deployment failed"
+        return 1
+    fi
+}
+
+#------------------------------------------------------------------------------
+# Deploy service via Docker Swarm (SSH)
+#------------------------------------------------------------------------------
+ssh_deploy_swarm() {
+    local remote_host="$1"
+    local remote_user="$2"
+    local remote_compose_dir="$3"
+    local ssh_key="$4"
+    local image_name="$5"
+    local tag="$6"
+    local service_name="$7"
+    local stack_name="$8"
+    
+    log_info "Deploying to ${remote_host} (Swarm: ${stack_name})..."
+    
+    local deploy_script="
+set -euo pipefail
+
+# Check if service exists for update
+full_service_name=\"${stack_name}_${service_name}\"
+
+if docker service ls --format '{{.Name}}' | grep -q \"^\${full_service_name}$\"; then
+    echo \"Updating existing service: \${full_service_name}\"
+    docker service update --image \"${image_name}:${tag}\" --force \"\${full_service_name}\"
+else
+    # Deploy stack
+    echo \"Deploying stack: ${stack_name}\"
+    
+    cd '${remote_compose_dir}'
+    
+    # Update image tag
+    export IMAGE_TAG=\"${tag}\"
+    
+    if [[ -f docker-compose.yaml ]]; then
+        sed -i 's|image: ${image_name}:.*|image: ${image_name}:${tag}|' docker-compose.yaml
+    elif [[ -f docker-compose.yml ]]; then
+        sed -i 's|image: ${image_name}:.*|image: ${image_name}:${tag}|' docker-compose.yml
+    fi
+    
+    docker stack deploy --compose-file docker-compose.yaml --with-registry-auth \"${stack_name}\"
+fi
+
+echo \"Waiting for service...\"
+sleep 5
+docker service ps \"\${full_service_name}\" --no-trunc
+"
+    
+    if ssh -i "$ssh_key" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+           "${remote_user}@${remote_host}" "$deploy_script"; then
+        log_success "Swarm deployment initiated successfully"
+        return 0
+    else
+        log_error "Swarm deployment failed"
         return 1
     fi
 }
