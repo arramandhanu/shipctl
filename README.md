@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/bash-4.0+-green.svg?style=for-the-badge&logo=gnu-bash&logoColor=white" alt="Bash">
   <img src="https://img.shields.io/badge/docker-required-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg?style=for-the-badge" alt="License">
@@ -256,10 +256,63 @@ shipctl frontend --rollback
 
 ## 🔄 CI/CD Integration
 
-Pre-configured workflows available for:
-- **GitHub Actions** (`.github/workflows/deploy.yml`)
-- **GitLab CI** (`.gitlab-ci.yml`)
-- **Bitbucket Pipelines** (`bitbucket-pipelines.yml`)
+### Quick Install for CI
+
+Use the lightweight CI installer to download shipctl in your pipeline:
+
+```bash
+# Install latest version
+curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/scripts/ci-install.sh | bash
+
+# Install specific version
+curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/scripts/ci-install.sh | SHIPCTL_VERSION=v1.0.0 bash
+```
+
+### GitHub Actions
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - name: Install shipctl
+    run: curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/scripts/ci-install.sh | bash
+  - name: Deploy
+    run: ./shipctl --all --yes
+```
+
+Or copy the template: `.github/workflows/deploy.yml`
+
+### GitLab CI
+
+```yaml
+deploy:
+  script:
+    - curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/scripts/ci-install.sh | bash
+    - ./shipctl --all --yes
+```
+
+Or copy the template: `.gitlab-ci.yml`
+
+### Bitbucket Pipelines
+
+```yaml
+pipelines:
+  default:
+    - step:
+        script:
+          - curl -fsSL https://raw.githubusercontent.com/arramandhanu/shipctl/main/scripts/ci-install.sh | bash
+          - ./shipctl --all --yes
+```
+
+Or copy the template: `bitbucket-pipelines.yml`
+
+### Available CI Templates
+
+| Platform | Template File | Features |
+|:---------|:--------------|:---------|
+| **GitHub Actions** | `.github/workflows/deploy.yml` | Manual dispatch, dry-run, caching |
+| **GitHub Actions** | `.github/workflows/ci.yml` | Matrix testing, ShellCheck |
+| **GitLab CI** | `.gitlab-ci.yml` | Multi-environment, K8s/Swarm jobs |
+| **Bitbucket** | `bitbucket-pipelines.yml` | Custom pipelines, K8s/Swarm/AWS/GCP |
 
 ---
 
