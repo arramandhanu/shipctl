@@ -1,0 +1,83 @@
+# shipctl - CI Workflow
+#
+# This workflow runs tests on PRs and pushes to validate shipctl.
+# Users integrating shipctl can use this as a template for their own CI.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  #----------------------------------------------------------------------------
+  # Test across multiple platforms
+  #----------------------------------------------------------------------------
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: |
+          echo "Checking shell syntax..."
+          bash -n ./shipctl
+          for file in lib/*.sh lib/**/*.sh; do
+            if [ -f "$file" ]; then
+              bash -n "$file" && echo "✓ $file"
+            fi
+          done
+
+      - name: Run ShellCheck
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck ./shipctl || echo "⚠ ShellCheck warnings (non-blocking)"
+
+      - name: Run test suite
+        run: |
+          chmod +x ./shipctl
+          chmod +x ./tests/run_tests.sh
+          ./tests/run_tests.sh
+
+      - name: Verify help output
+        run: |
+          chmod +x ./shipctl
+          ./shipctl --help
+          ./shipctl --version
+
+  #----------------------------------------------------------------------------
+  # Validate configuration templates
+  #----------------------------------------------------------------------------
+  validate-config:
+    name: Validate Config Templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check config templates exist
+        run: |
+          echo "Checking configuration templates..."
+          test -f config/services.env.template && echo "✓ services.env.template"
+          test -f .env.template && echo "✓ .env.template"
+
+      - name: Validate YAML syntax
+        run: |
+          echo "Validating CI files..."
+          python3 -c "import yaml; yaml.safe_load(open('.gitlab-ci.yml'))" && echo "✓ .gitlab-ci.yml"
+          python3 -c "import yaml; yaml.safe_load(open('bitbucket-pipelines.yml'))" && echo "✓ bitbucket-pipelines.yml"

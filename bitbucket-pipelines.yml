@@ -1,6 +1,6 @@
 # shipctl - Bitbucket Pipelines
 #
-# This pipeline deploys services using shipctl.
+# This pipeline template allows you to integrate shipctl into your CI/CD.
 # Configure your services in deploy.env or config/services.env before use.
 #
 # Required Repository Variables (Settings > Pipelines > Repository Variables):
@@ -10,16 +10,19 @@
 #   REMOTE_HOST         - Deployment server IP/hostname
 #   REMOTE_USER         - SSH user for deployment
 
-image: docker:24-dind
+image: docker:24.0-dind
 
 definitions:
   services:
     docker:
       memory: 2048
 
+  caches:
+    docker-layers: ~/.docker
+
   steps:
     #--------------------------------------------------------------------------
-    # Reusable deploy step
+    # Reusable deploy step - used by all deployment pipelines
     #--------------------------------------------------------------------------
     - step: &deploy-step
         name: Deploy Service
@@ -27,15 +30,22 @@ definitions:
           - docker
         caches:
           - docker
+          - docker-layers
         script:
           # Install dependencies
           - apk add --no-cache openssh-client bash git curl
           
-          # Setup SSH
+          # Setup SSH with secure host key validation
           - mkdir -p ~/.ssh
+          - chmod 700 ~/.ssh
           - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           - chmod 600 ~/.ssh/deploy_key
-          - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          - |
+            ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null
+            if [ ! -s ~/.ssh/known_hosts ]; then
+              echo "ERROR: Failed to fetch SSH host key for $REMOTE_HOST"
+              exit 1
+            fi
           
           # Docker login
           - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
@@ -46,7 +56,7 @@ definitions:
           # Export SSH key path
           - export SSH_KEY=~/.ssh/deploy_key
           
-          # Run deployment
+          # Run deployment (SERVICE variable determines single or all)
           - |
             if [ -n "$SERVICE" ]; then
               ./shipctl ${SERVICE} --yes --env ${ENVIRONMENT:-production}
@@ -55,13 +65,49 @@ definitions:
             fi
 
     #--------------------------------------------------------------------------
+    # Reusable deploy-all step - explicitly deploys all services
+    #--------------------------------------------------------------------------
+    - step: &deploy-all-step
+        name: Deploy All Services
+        services:
+          - docker
+        caches:
+          - docker
+          - docker-layers
+        script:
+          # Install dependencies
+          - apk add --no-cache openssh-client bash git curl
+          
+          # Setup SSH with secure host key validation
+          - mkdir -p ~/.ssh
+          - chmod 700 ~/.ssh
+          - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          - chmod 600 ~/.ssh/deploy_key
+          - |
+            ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null
+            if [ ! -s ~/.ssh/known_hosts ]; then
+              echo "ERROR: Failed to fetch SSH host key for $REMOTE_HOST"
+              exit 1
+            fi
+          
+          # Docker login
+          - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          
+          # Make deploy script executable and run
+          - chmod +x ./shipctl
+          - export SSH_KEY=~/.ssh/deploy_key
+          - ./shipctl --all --yes --env ${ENVIRONMENT:-production}
+
+    #--------------------------------------------------------------------------
     # Validate step
     #--------------------------------------------------------------------------
     - step: &validate-step
         name: Validate Configuration
         script:
-          - apk add --no-cache bash
+          - apk add --no-cache bash shellcheck
           - chmod +x ./shipctl
+          # Validate shell script syntax (non-blocking)
+          - shellcheck ./shipctl 2>/dev/null || echo "⚠ ShellCheck warnings (review recommended)"
           - ./shipctl --list || echo "Run: shipctl init"
 
 pipelines:
@@ -93,19 +139,8 @@ pipelines:
               - staging
               - production
       - step:
-          <<: *deploy-step
-          name: Deploy All Services
+          <<: *deploy-all-step
           deployment: ${ENVIRONMENT}
-          script:
-            - apk add --no-cache openssh-client bash git curl
-            - mkdir -p ~/.ssh
-            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-            - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
-            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            - chmod +x ./shipctl
-            - export SSH_KEY=~/.ssh/deploy_key
-            - ./shipctl --all --yes --env ${ENVIRONMENT}
 
     # Dry run for testing
     dry-run:
@@ -117,6 +152,101 @@ pipelines:
             - apk add --no-cache bash git
             - chmod +x ./shipctl
             - ./shipctl --all --dry-run
+
+    # Create release archive
+    create-release:
+      - variables:
+          - name: VERSION
+            default: ""
+      - step:
+          name: Create Release ${VERSION}
+          script:
+            - apk add --no-cache tar gzip
+            - |
+              if [ -z "$VERSION" ]; then
+                echo "ERROR: VERSION variable required"
+                exit 1
+              fi
+              tar -czvf shipctl-${VERSION}.tar.gz \
+                --exclude='.git' \
+                --exclude='*.tar.gz' \
+                .
+              echo "Created: shipctl-${VERSION}.tar.gz"
+          artifacts:
+            - "*.tar.gz"
+
+    #--------------------------------------------------------------------------
+    # Orchestrator-Specific Deployments (Optional)
+    #--------------------------------------------------------------------------
+    
+    # Deploy to Kubernetes
+    deploy-kubernetes:
+      - variables:
+          - name: ENVIRONMENT
+            default: "production"
+      - step:
+          <<: *deploy-step
+          name: Deploy to Kubernetes
+          deployment: ${ENVIRONMENT}
+          script:
+            - apk add --no-cache openssh-client bash git curl
+            - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null
+            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            - chmod +x ./shipctl
+            - export SSH_KEY=~/.ssh/deploy_key
+            - ./shipctl --all --orchestrator kubernetes --yes --env ${ENVIRONMENT}
+
+    # Deploy to Docker Swarm
+    deploy-swarm:
+      - variables:
+          - name: STACK_NAME
+            default: "myapp"
+          - name: ENVIRONMENT
+            default: "production"
+      - step:
+          <<: *deploy-step
+          name: Deploy to Swarm
+          deployment: ${ENVIRONMENT}
+          script:
+            - apk add --no-cache openssh-client bash git curl
+            - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null
+            - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            - chmod +x ./shipctl
+            - export SSH_KEY=~/.ssh/deploy_key
+            - ./shipctl --all --orchestrator swarm --stack ${STACK_NAME} --yes
+
+    #--------------------------------------------------------------------------
+    # Cloud Provider Deployments (Optional)
+    #--------------------------------------------------------------------------
+    
+    # Deploy to AWS ECS
+    deploy-aws:
+      - variables:
+          - name: AWS_CLUSTER
+            default: ""
+      - step:
+          <<: *deploy-step
+          name: Deploy to AWS ECS
+          deployment: production
+          script:
+            - apk add --no-cache bash git curl
+            - chmod +x ./shipctl
+            - ./shipctl --all --provider aws --cluster ${AWS_CLUSTER} --yes
+
+    # Deploy to GCP Cloud Run
+    deploy-gcp:
+      - step:
+          <<: *deploy-step
+          name: Deploy to GCP
+          deployment: production
+          script:
+            - apk add --no-cache bash git curl
+            - chmod +x ./shipctl
+            - ./shipctl --all --provider gcp --yes
 
   #----------------------------------------------------------------------------
   # Branch Pipelines
@@ -136,15 +266,26 @@ pipelines:
     # Develop branch - auto deploy to staging
     develop:
       - step:
-          <<: *deploy-step
+          <<: *deploy-all-step
           name: Deploy to Staging
           deployment: staging
           script:
+            # Install dependencies
             - apk add --no-cache openssh-client bash git curl
+            
+            # Setup SSH with secure host key validation
             - mkdir -p ~/.ssh
+            - chmod 700 ~/.ssh
             - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
             - chmod 600 ~/.ssh/deploy_key
-            - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+            - |
+              ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts 2>/dev/null
+              if [ ! -s ~/.ssh/known_hosts ]; then
+                echo "ERROR: Failed to fetch SSH host key for $REMOTE_HOST"
+                exit 1
+              fi
+            
+            # Docker login and deploy to staging
             - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
             - chmod +x ./shipctl
             - export SSH_KEY=~/.ssh/deploy_key
