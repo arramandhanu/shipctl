@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #==============================================================================
-# SHIPCTL - SHELL AUTOCOMPLETION
+# SHIPCTL - BASH AUTOCOMPLETION
 #
 # Installation:
-#   Bash:  source /path/to/shipctl/completions/shipctl.bash
-#   Zsh:   source /path/to/shipctl/completions/shipctl.bash
+#   source /path/to/shipctl/completions/shipctl.bash
 #
-# Add to your shell profile (~/.bashrc, ~/.zshrc) for persistent completion.
+# Add to your shell profile (~/.bashrc) for persistent completion.
 #==============================================================================
 
 _shipctl_completions() {
@@ -26,12 +25,12 @@ _shipctl_completions() {
     done
     
     # Fallback: check current directory
-    if [[ -z "$deploy_root" && -f "./deploy.sh" ]]; then
+    if [[ -z "$deploy_root" && -f "./shipctl" ]]; then
         deploy_root="."
     fi
     
     # All available options
-    opts="-h --help -v --version -l --list -a --all -e --env -t --tag -c --config -n --dry-run -y --yes --skip-checks --build-only --deploy-only --rollback --no-logs --local init"
+    opts="-h --help -v --version -l --list -a --all -e --env -t --tag -c --config -n --dry-run -y --yes --skip-checks --build-only --deploy-only --rollback --no-logs --local --orchestrator --provider --stack --cluster --verbose init"
     
     # Handle option arguments
     case "${prev}" in
@@ -51,6 +50,26 @@ _shipctl_completions() {
         -c|--config)
             # Complete file paths
             COMPREPLY=( $(compgen -f -- "${cur}") )
+            return 0
+            ;;
+        --orchestrator)
+            COMPREPLY=( $(compgen -W "compose swarm kubernetes k8s" -- "${cur}") )
+            return 0
+            ;;
+        --provider)
+            COMPREPLY=( $(compgen -W "local aws gcp azure alibaba" -- "${cur}") )
+            return 0
+            ;;
+        --stack)
+            # No sensible default completions for stack names
+            return 0
+            ;;
+        --cluster)
+            # Try to list k8s contexts if kubectl available
+            if command -v kubectl &>/dev/null; then
+                local contexts=$(kubectl config get-contexts -o name 2>/dev/null)
+                COMPREPLY=( $(compgen -W "${contexts}" -- "${cur}") )
+            fi
             return 0
             ;;
     esac
@@ -78,12 +97,10 @@ _shipctl_completions() {
     fi
     
     # Complete service names
-    COMPREPLY=( $(compgen -W "${services}" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "${services} init" -- "${cur}") )
     return 0
 }
 
 # Register completion for shipctl and common invocation patterns
 complete -F _shipctl_completions shipctl
 complete -F _shipctl_completions ./shipctl
-complete -F _shipctl_completions deploy.sh
-complete -F _shipctl_completions ./deploy.sh

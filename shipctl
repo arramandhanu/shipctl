@@ -34,6 +34,9 @@ source "${DEPLOY_ROOT}/lib/checks.sh"
 source "${DEPLOY_ROOT}/lib/docker.sh"
 source "${DEPLOY_ROOT}/lib/ssh.sh"
 source "${DEPLOY_ROOT}/lib/git.sh"
+source "${DEPLOY_ROOT}/lib/retry.sh"
+source "${DEPLOY_ROOT}/lib/notify.sh"
+source "${DEPLOY_ROOT}/lib/history.sh"
 
 # Orchestrator and provider modules
 source "${DEPLOY_ROOT}/lib/orchestrator.sh"
@@ -49,7 +52,7 @@ source "${DEPLOY_ROOT}/lib/providers/alibaba.sh"
 #------------------------------------------------------------------------------
 # Version
 #------------------------------------------------------------------------------
-readonly VERSION="1.1.0"
+readonly VERSION="0.0.1"
 
 #------------------------------------------------------------------------------
 # Default options
@@ -830,6 +833,15 @@ main() {
                 ;;
             init)
                 cmd_init
+                exit 0
+                ;;
+            history)
+                shift
+                history_show "$@"
+                exit 0
+                ;;
+            stats)
+                history_stats
                 exit 0
                 ;;
             -*)
