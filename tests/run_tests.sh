@@ -454,6 +454,27 @@ main() {
         echo ""
     fi
     
+    # Run behavioral tests
+    echo -e "${BLUE}Running behavioral tests...${RESET}"
+    echo ""
+    
+    local behavioral_failed=0
+    for test_file in "${SCRIPT_DIR}"/test_*.sh; do
+        if [[ -f "$test_file" ]]; then
+            echo -e "${BLUE}► $(basename "$test_file")${RESET}"
+            if bash "$test_file"; then
+                echo ""
+            else
+                behavioral_failed=1
+                echo ""
+            fi
+        fi
+    done
+    
+    if [[ $behavioral_failed -gt 0 ]]; then
+        ((TESTS_FAILED++))
+    fi
+    
     # Summary
     echo -e "${BLUE}══════════════════════════════════════════${RESET}"
     echo -e "  Tests Passed:  ${GREEN}${TESTS_PASSED}${RESET}"

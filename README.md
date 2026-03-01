@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.0.1-blue.svg?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/bash-4.0+-green.svg?style=for-the-badge&logo=gnu-bash&logoColor=white" alt="Bash">
   <img src="https://img.shields.io/badge/docker-required-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
   <img src="https://img.shields.io/badge/license-MIT-brightgreen.svg?style=for-the-badge" alt="License">

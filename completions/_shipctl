@@ -1,0 +1,87 @@
+#compdef shipctl
+#==============================================================================
+# SHIPCTL - ZSH AUTOCOMPLETION (native)
+#
+# Installation:
+#   1. Copy to your fpath:
+#      cp completions/_shipctl ~/.zsh/completions/
+#   2. Add to ~/.zshrc:
+#      fpath=(~/.zsh/completions $fpath)
+#      autoload -Uz compinit && compinit
+#==============================================================================
+
+_shipctl_services() {
+    local services=()
+    local config_files=(
+        "./deploy.env"
+        "${HOME}/.config/shipctl/services.env"
+        "./config/services.env"
+    )
+    
+    for cfg in "${config_files[@]}"; do
+        if [[ -f "$cfg" ]]; then
+            local raw
+            raw=$(grep -E "^SERVICES=" "$cfg" 2>/dev/null | cut -d= -f2 | tr -d '"')
+            if [[ -n "$raw" ]]; then
+                services=(${(s:,:)raw})
+                break
+            fi
+        fi
+    done
+    
+    if (( ${#services[@]} == 0 )); then
+        services=(frontend backend api)
+    fi
+    
+    _describe 'service' services
+}
+
+_shipctl() {
+    local -a commands
+    commands=(
+        'init:Initialize shipctl configuration'
+    )
+    
+    _arguments -s \
+        '(-h --help)'{-h,--help}'[Show help message]' \
+        '(-v --version)'{-v,--version}'[Show version]' \
+        '(-l --list)'{-l,--list}'[List available services]' \
+        '(-a --all)'{-a,--all}'[Deploy all services]' \
+        '(-e --env)'{-e,--env}'[Target environment]:environment:(staging production development)' \
+        '(-t --tag)'{-t,--tag}'[Docker image tag]:tag:_shipctl_tags' \
+        '(-c --config)'{-c,--config}'[Custom config file]:config file:_files' \
+        '(-n --dry-run)'{-n,--dry-run}'[Preview without changes]' \
+        '(-y --yes)'{-y,--yes}'[Skip confirmation prompts]' \
+        '--skip-checks[Skip pre-flight checks]' \
+        '--build-only[Build only, do not deploy]' \
+        '--deploy-only[Deploy only, do not build]' \
+        '--rollback[Rollback to previous version]' \
+        '--no-logs[Disable log output]' \
+        '--local[Local mode (no SSH)]' \
+        '--verbose[Enable verbose output]' \
+        '--orchestrator[Container orchestrator]:orchestrator:(compose swarm kubernetes k8s)' \
+        '--provider[Cloud provider]:provider:(local aws gcp azure alibaba)' \
+        '--stack[Stack name for Swarm]:stack name:' \
+        '--cluster[Kubernetes cluster]:cluster:_shipctl_clusters' \
+        '*:service:_shipctl_services' \
+        && return 0
+}
+
+_shipctl_tags() {
+    local -a tags commits
+    if command -v git &>/dev/null; then
+        tags=(${(f)"$(git tag -l 2>/dev/null | head -20)"})
+        commits=(${(f)"$(git log --oneline -10 2>/dev/null | awk '{print $1}')"})
+        _describe 'git tag' tags -- commits
+    fi
+}
+
+_shipctl_clusters() {
+    if command -v kubectl &>/dev/null; then
+        local -a contexts
+        contexts=(${(f)"$(kubectl config get-contexts -o name 2>/dev/null)"})
+        _describe 'k8s context' contexts
+    fi
+}
+
+_shipctl "$@"
