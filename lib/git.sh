@@ -20,11 +20,10 @@ is_git_url() {
     # - git@github.com:user/repo.git
     # - ssh://git@github.com/user/repo.git
     # - git://github.com/user/repo.git
-    if [[ "$url" =~ ^https?:// ]] || \
-       [[ "$url" =~ ^git@ ]] || \
-       [[ "$url" =~ ^ssh:// ]] || \
-       [[ "$url" =~ ^git:// ]] || \
-       [[ "$url" =~ \.git$ ]]; then
+    if [[ "$url" =~ ^https?://[^[:space:]]+ ]] || \
+       [[ "$url" =~ ^git@[^[:space:]]+:[^[:space:]]+ ]] || \
+       [[ "$url" =~ ^ssh://[^[:space:]]+ ]] || \
+       [[ "$url" =~ ^git://[^[:space:]]+ ]]; then
         return 0
     fi
     return 1
