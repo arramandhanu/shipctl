@@ -64,6 +64,8 @@ is_git_url "git@bitbucket.org:user/repo.git" && log_pass "is_git_url: Bitbucket 
 is_git_url "../relative/path" && log_fail "is_git_url: relative path should fail" || log_pass "is_git_url: rejects relative path"
 is_git_url "/absolute/path" && log_fail "is_git_url: absolute path should fail" || log_pass "is_git_url: rejects absolute path"
 is_git_url "" && log_fail "is_git_url: empty should fail" || log_pass "is_git_url: rejects empty string"
+is_git_url "repo.git" && log_fail "is_git_url: bare .git name should fail" || log_pass "is_git_url: rejects bare .git name"
+is_git_url "my repo.git" && log_fail "is_git_url: spaced .git name should fail" || log_pass "is_git_url: rejects invalid .git-like value"
 
 #------------------------------------------------------------------------------
 # get_cache_dir
